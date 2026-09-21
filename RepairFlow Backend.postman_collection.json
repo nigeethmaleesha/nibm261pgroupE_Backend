@@ -1,0 +1,570 @@
+{
+  "info": {
+    "_postman_id": "435c4214-987d-4100-8218-768d2d971ec1",
+    "name": "RepairFlow Backend",
+    "description": "Complete Postman collection for the current RepairFlow Sprint 1 backend. Covers health check, customer registration + email OTP + resend, customer login + OTP + resend, HttpOnly cookie session, refresh-token rotation, logout, protected /me, validation/security tests, and no-cookie/session checks.\n\nIMPORTANT OTP TESTING:\n1) Set testEmail to a real email address you can receive mail at.\n2) POST /api/auth/register creates a REGISTER record in MongoDB collection `otp` and emails the same 6-digit code.\n3) Copy that OTP into collection variable registrationOtp before Verify Registration OTP.\n4) POST /api/auth/login creates a LOGIN record in `otp`; copy it into loginOtp before Verify Login OTP.\n5) Resend endpoints have a default 60-second cooldown. Wait before running them.\n6) Postman automatically maintains the HttpOnly cookies returned after login OTP verification.\n7) Do not expect access/refresh tokens in the JSON body; they are intentionally stored as HttpOnly cookies.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "45496245",
+    "_collection_link": "https://go.postman.co/collection/45496245-435c4214-987d-4100-8218-768d2d971ec1?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Setup & Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('API status is ok', () => pm.expect(data.status).to.eql('ok'));",
+                  "pm.test('Service name is RepairFlow API', () => pm.expect(data.service).to.eql('RepairFlow API'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Confirms that the RepairFlow API process is running."
+          },
+          "response": []
+        }
+      ],
+      "description": "Run this first after `npm run dev`."
+    },
+    {
+      "name": "Customer Registration",
+      "item": [
+        {
+          "name": "Register Customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202', () => pm.response.to.have.status(202));\nconst data = pm.response.json();\npm.test('OTP is required', () => pm.expect(data.requiresOtp).to.eql(true));\npm.test('Purpose is REGISTER', () => pm.expect(data.otpPurpose).to.eql('REGISTER'));\npm.test('OTP is NOT exposed in response', () => pm.expect(data).to.not.have.property('otp'));\npm.test('Email matches testEmail', () => pm.expect(data.email.toLowerCase()).to.eql(pm.collectionVariables.get('testEmail').toLowerCase()));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"{{testFullName}}\",\n  \"email\": \"{{testEmail}}\",\n  \"contactNumber\": \"{{testContactNumber}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Creates or updates an UNVERIFIED customer and creates a REGISTER OTP in MongoDB collection `otp`. The same OTP is sent by email. Expected: 202. After this request, open MongoDB Atlas -> repairflow -> otp or check the email and copy the 6-digit code into collection variable `registrationOtp`."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Registration OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('Resend requires OTP', () => pm.expect(data.requiresOtp).to.eql(true));\npm.test('Purpose is REGISTER', () => pm.expect(data.otpPurpose).to.eql('REGISTER'));\npm.test('OTP is not returned in API response', () => pm.expect(data).to.not.have.property('otp'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register",
+                "resend-otp"
+              ]
+            },
+            "description": "Replaces the current REGISTER OTP with a new code in the separate `otp` collection and sends the new code by email. Default cooldown is 60 seconds. Wait until the cooldown has passed before running this request. Then update `registrationOtp` with the NEW code."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Registration OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));\nconst data = pm.response.json();\npm.test('Verified user returned', () => pm.expect(data.user).to.be.an('object'));\npm.test('Email is verified', () => pm.expect(data.user.isEmailVerified).to.eql(true));\npm.test('Role is customer', () => pm.expect(data.user.role).to.eql('customer'));\npm.test('Password is not returned', () => pm.expect(data.user).to.not.have.property('password'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"otp\": \"{{registrationOtp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register",
+                "verify-otp"
+              ]
+            },
+            "description": "Verifies the REGISTER OTP from MongoDB/email. On success the OTP document is deleted and the user's `isEmailVerified` becomes true. Expected: 201."
+          },
+          "response": []
+        }
+      ],
+      "description": "Happy-path registration. If this email is already verified, change `testEmail` to another real address before rerunning."
+    },
+    {
+      "name": "Customer Login & Logout",
+      "item": [
+        {
+          "name": "Customer Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202', () => pm.response.to.have.status(202));\nconst data = pm.response.json();\npm.test('OTP required', () => pm.expect(data.requiresOtp).to.eql(true));\npm.test('Purpose is LOGIN', () => pm.expect(data.otpPurpose).to.eql('LOGIN'));\npm.test('OTP is not exposed', () => pm.expect(data).to.not.have.property('otp'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Checks customer email/password first. If valid and registration is verified, creates a LOGIN OTP in `otp` and emails it. Expected: 202. Copy the LOGIN code into `loginOtp`."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('Purpose is LOGIN', () => pm.expect(data.otpPurpose).to.eql('LOGIN'));\npm.test('OTP is not exposed', () => pm.expect(data).to.not.have.property('otp'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login",
+                "resend-otp"
+              ]
+            },
+            "description": "Requires an existing pending LOGIN OTP. Default resend cooldown is 60 seconds. After success, replace `loginOtp` with the newly generated code."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('Token storage is HttpOnly cookies', () => pm.expect(data.tokenStorage).to.eql('httpOnly_cookies'));\npm.test('JWTs are not exposed in JSON response', () => { pm.expect(data).to.not.have.property('accessToken'); pm.expect(data).to.not.have.property('refreshToken'); });\npm.test('Logged in user is customer', () => pm.expect(data.user.role).to.eql('customer'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"otp\": \"{{loginOtp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login",
+                "verify-otp"
+              ]
+            },
+            "description": "Verifies the LOGIN OTP. On success the LOGIN OTP record is deleted, a server-side session is created, and access/refresh JWTs are returned only as HttpOnly cookies. Expected: 200."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('Customer data returned', () => pm.expect(data.user.email.toLowerCase()).to.eql(pm.collectionVariables.get('testEmail').toLowerCase()));\npm.test('Sensitive password omitted', () => pm.expect(data.user).to.not.have.property('password'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Protected request. Postman should automatically send the access HttpOnly cookie set by Verify Login OTP."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Session - Rotate Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('Session refreshed message', () => pm.expect(data.message).to.eql('Session refreshed successfully'));\npm.test('Token storage remains HttpOnly cookies', () => pm.expect(data.tokenStorage).to.eql('httpOnly_cookies'));\npm.test('Tokens are not in JSON body', () => { pm.expect(data).to.not.have.property('accessToken'); pm.expect(data).to.not.have.property('refreshToken'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh-token"
+              ]
+            },
+            "description": "Uses the HttpOnly refresh cookie. Rotates both refresh and access tokens and updates the stored refresh-token hash for the same server-side session. Expected: 200."
+          },
+          "response": []
+        },
+        {
+          "name": "me After Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\npm.test('User still authenticated', () => pm.expect(pm.response.json().user.isEmailVerified).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Confirms the newly rotated access-token cookie still authenticates correctly."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout Current Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\npm.test('Logout message is correct', () => pm.expect(pm.response.json().message).to.eql('Logged out successfully'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Removes the current session from the user's activeSessions array and clears both auth cookies. Logout is idempotent. Expected: 200."
+          },
+          "response": []
+        },
+        {
+          "name": "me After Logout - Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));\nconst data = pm.response.json();\npm.test('Authentication is rejected', () => pm.expect(data.message).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Confirms the session/cookies can no longer access a protected route after logout. Expected: 401."
+          },
+          "response": []
+        }
+      ],
+      "description": "Happy-path login plus complete JWT HttpOnly-cookie lifecycle."
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "noCookieBaseUrl",
+      "value": "http://127.0.0.1:5000"
+    },
+    {
+      "key": "testFullName",
+      "value": "RepairFlow Test Customer"
+    },
+    {
+      "key": "testEmail",
+      "value": "CHANGE_ME_TO_REAL_EMAIL@gmail.com"
+    },
+    {
+      "key": "testContactNumber",
+      "value": "0771234567"
+    },
+    {
+      "key": "testPassword",
+      "value": "StrongPass123!"
+    },
+    {
+      "key": "registrationOtp",
+      "value": "000000"
+    },
+    {
+      "key": "loginOtp",
+      "value": "000000"
+    },
+    {
+      "key": "invalidOtp",
+      "value": "999999"
+    },
+    {
+      "key": "wrongPassword",
+      "value": "WrongPassword123!"
+    },
+    {
+      "key": "accessCookieName",
+      "value": "repairflow_access_token"
+    },
+    {
+      "key": "refreshCookieName",
+      "value": "repairflow_refresh_token"
+    }
+  ]
+}
