@@ -1,0 +1,30 @@
+{
+  "name": "repairflow-backend",
+  "version": "1.0.0",
+  "description": "RepairFlow Agile coursework backend - customer registration/login with separate MongoDB OTP model and JWT sessions",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "check": "node --check src/server.js && node --check src/services/authService.js && node --check src/services/otpService.js && node --check src/services/emailService.js && node --check src/controllers/authController.js && node --check src/models/User.js && node --check src/models/Otp.js",
+    "db:sync-indexes": "node scripts/syncIndexes.js",
+    "email:check": "node scripts/checkEmailConfig.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.6.1",
+    "nodemailer": "^8.0.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
