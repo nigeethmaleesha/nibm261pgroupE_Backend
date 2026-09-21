@@ -14,8 +14,15 @@ const findByEmail = (email, { includePassword = false, includeSessions = false }
   return query;
 };
 
-const findById = (id, { includeSessions = false } = {}) => {
+const findById = (
+  id,
+  { includePassword = false, includeSessions = false } = {}
+) => {
   let query = User.findById(id);
+
+  if (includePassword) {
+    query = query.select('+password');
+  }
 
   if (includeSessions) {
     query = query.select('+activeSessions +activeSessions.refreshTokenHash');

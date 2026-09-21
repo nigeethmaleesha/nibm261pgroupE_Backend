@@ -7,6 +7,12 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 const GENERIC_LOGIN_ERROR = 'Invalid email or password';
+const GENERIC_FORGOT_PASSWORD_MESSAGE =
+  'If a verified customer account matches that email, a password reset OTP has been sent.';
+const GENERIC_FORGOT_PASSWORD_RESEND_MESSAGE =
+  'If a password reset request is pending for that email, a new OTP has been sent.';
+const PASSWORD_RESET_TOKEN_EXPIRES_IN =
+  process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN || '15m';
 
 const normalizeEmail = (email = '') => String(email).trim().toLowerCase();
 
@@ -29,6 +35,39 @@ const getRefreshExpiryDate = () => {
 };
 
 const hashRefreshToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
+const passwordFingerprint = (passwordHash) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+
+  return crypto
+    .createHmac('sha256', process.env.JWT_SECRET)
+    .update(String(passwordHash || ''))
+    .digest('hex');
+};
+
+const signPasswordResetToken = (user) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+
+  if (!user.password) {
+    throw new Error('Password hash is required to create a password reset token');
+  }
+
+  return jwt.sign(
+    {
+      sub: user._id.toString(),
+      email: user.email,
+      purpose: 'password-reset',
+      passwordFingerprint: passwordFingerprint(user.password),
+      jti: crypto.randomUUID()
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: PASSWORD_RESET_TOKEN_EXPIRES_IN }
+  );
+};
 
 const sanitizeUser = (user) => ({
   id: user._id,
@@ -296,6 +335,181 @@ const resendLoginOtp = async (payload = {}) => {
   };
 };
 
+// Forgot password step 1:
+// Keep the response generic so this endpoint cannot be used to discover
+// whether an email address is registered.
+const initiateForgotPassword = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+
+  if (!email) {
+    throw createHttpError('Email is required', 400);
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    throw createHttpError('Please provide a valid email address', 400);
+  }
+
+  const user = await userRepository.findByEmail(email);
+
+  if (!user || user.role !== 'customer' || !user.isEmailVerified || !user.isActive) {
+    return {
+      message: GENERIC_FORGOT_PASSWORD_MESSAGE,
+      requiresOtp: true
+    };
+  }
+
+  const otpInfo = await otpService.issueOtp(user, 'FORGOT_PASSWORD');
+
+  return {
+    message: GENERIC_FORGOT_PASSWORD_MESSAGE,
+    requiresOtp: true,
+    ...otpInfo
+  };
+};
+
+// Forgot password resend:
+// A resend only replaces an already-pending password-reset OTP. For unknown
+// accounts or requests that were never initiated, return the same generic
+// response instead of exposing account existence.
+const resendForgotPasswordOtp = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+
+  if (!email) {
+    throw createHttpError('Email is required', 400);
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    throw createHttpError('Please provide a valid email address', 400);
+  }
+
+  const user = await userRepository.findByEmail(email);
+
+  if (!user || user.role !== 'customer' || !user.isEmailVerified || !user.isActive) {
+    return {
+      message: GENERIC_FORGOT_PASSWORD_RESEND_MESSAGE,
+      requiresOtp: true
+    };
+  }
+
+  try {
+    const otpInfo = await otpService.resendOtp(user, 'FORGOT_PASSWORD');
+
+    return {
+      message: GENERIC_FORGOT_PASSWORD_RESEND_MESSAGE,
+      requiresOtp: true,
+      ...otpInfo
+    };
+  } catch (error) {
+    // Do not reveal that this is a real account when there is no pending
+    // password-reset request. Cooldown/attempt-limit errors are still returned
+    // because they are part of an already-started reset flow.
+    if (
+      error.statusCode === 400 &&
+      String(error.message || '').startsWith('No pending password reset OTP request')
+    ) {
+      return {
+        message: GENERIC_FORGOT_PASSWORD_RESEND_MESSAGE,
+        requiresOtp: true
+      };
+    }
+
+    throw error;
+  }
+};
+
+// Forgot password step 2:
+// Verify email + OTP, then issue a short-lived one-time reset token. The token
+// contains a fingerprint of the current password hash, so after a successful
+// password change the same reset token can no longer be reused.
+const verifyForgotPasswordOtp = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+
+  if (!email) {
+    throw createHttpError('Email is required', 400);
+  }
+
+  const user = await userRepository.findByEmail(email, { includePassword: true });
+
+  if (!user || user.role !== 'customer' || !user.isEmailVerified || !user.isActive) {
+    throw createHttpError('Invalid or expired password reset request', 400);
+  }
+
+  await otpService.verifyOtp(user, payload.otp, 'FORGOT_PASSWORD');
+
+  return {
+    message: 'Password reset OTP verified successfully.',
+    resetToken: signPasswordResetToken(user),
+    resetTokenExpiresIn: PASSWORD_RESET_TOKEN_EXPIRES_IN
+  };
+};
+
+// Forgot password step 3:
+// Consume the reset token, change the password, revoke every active session,
+// and clear any remaining OTP records for this user.
+const changeForgottenPassword = async (payload = {}) => {
+  const resetToken = String(payload.resetToken || '').trim();
+  const newPassword = String(payload.newPassword || '');
+  const confirmPassword = payload.confirmPassword === undefined
+    ? newPassword
+    : String(payload.confirmPassword || '');
+
+  if (!resetToken) {
+    throw createHttpError('Password reset token is required', 401);
+  }
+
+  if (newPassword.length < 12) {
+    throw createHttpError('New password must contain at least 12 characters', 400);
+  }
+
+  if (newPassword !== confirmPassword) {
+    throw createHttpError('New password and confirm password do not match', 400);
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+  } catch (error) {
+    throw createHttpError('Invalid or expired password reset token', 401);
+  }
+
+  if (
+    decoded.purpose !== 'password-reset' ||
+    !decoded.sub ||
+    !decoded.email ||
+    !decoded.passwordFingerprint
+  ) {
+    throw createHttpError('Invalid password reset token', 401);
+  }
+
+  const user = await userRepository.findById(decoded.sub, {
+    includePassword: true,
+    includeSessions: true
+  });
+
+  if (
+    !user ||
+    user.role !== 'customer' ||
+    !user.isActive ||
+    normalizeEmail(user.email) !== normalizeEmail(decoded.email)
+  ) {
+    throw createHttpError('Invalid password reset token', 401);
+  }
+
+  const currentFingerprint = passwordFingerprint(user.password);
+  if (currentFingerprint !== decoded.passwordFingerprint) {
+    throw createHttpError('This password reset token has already been used or is no longer valid', 401);
+  }
+
+  user.password = newPassword;
+  user.activeSessions = [];
+  await userRepository.save(user);
+  await otpService.deleteUserOtps(user._id);
+
+  return {
+    message: 'Password changed successfully. All existing sessions were signed out. Please log in again.'
+  };
+};
+
 const refreshSession = async (incomingRefreshToken) => {
   if (!incomingRefreshToken) {
     throw createHttpError('Refresh token is required', 401);
@@ -387,6 +601,10 @@ module.exports = {
   loginCustomer,
   verifyLoginOtp,
   resendLoginOtp,
+  initiateForgotPassword,
+  resendForgotPasswordOtp,
+  verifyForgotPasswordOtp,
+  changeForgottenPassword,
   refreshSession,
   logoutCurrentSession,
   sanitizeUser

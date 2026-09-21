@@ -18,7 +18,7 @@ const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 const normalizePurpose = (purpose) => {
   const normalized = String(purpose || '').trim().toUpperCase();
 
-  if (!['REGISTER', 'LOGIN'].includes(normalized)) {
+  if (!['REGISTER', 'LOGIN', 'FORGOT_PASSWORD'].includes(normalized)) {
     throw new Error(`Unsupported OTP purpose: ${purpose}`);
   }
 
@@ -87,17 +87,24 @@ const issueOtp = async (user, purpose) => {
   return otpMetadata(record);
 };
 
+const missingOtpMessage = (purpose) => {
+  if (purpose === 'REGISTER') {
+    return 'No pending registration OTP request was found. Please register again.';
+  }
+
+  if (purpose === 'FORGOT_PASSWORD') {
+    return 'No pending password reset OTP request was found. Please request a password reset again.';
+  }
+
+  return 'No pending login OTP request was found. Please login again.';
+};
+
 const resendOtp = async (user, purpose) => {
   const normalizedPurpose = normalizePurpose(purpose);
   const current = await getRecord(user, normalizedPurpose);
 
   if (!current) {
-    throw createHttpError(
-      normalizedPurpose === 'REGISTER'
-        ? 'No pending registration OTP request was found. Please register again.'
-        : 'No pending login OTP request was found. Please login again.',
-      400
-    );
+    throw createHttpError(missingOtpMessage(normalizedPurpose), 400);
   }
 
   if (Number(current.resendCount || 0) >= getMaxResends()) {
@@ -110,7 +117,12 @@ const resendOtp = async (user, purpose) => {
 
     if (elapsedMs < cooldownMs) {
       const waitSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
-      throw createHttpError(`Please wait ${waitSeconds} second(s) before requesting another OTP.`, 429);
+      const error = createHttpError(
+        `Please wait ${waitSeconds} second(s) before requesting another OTP.`,
+        429
+      );
+      error.retryAfterSeconds = waitSeconds;
+      throw error;
     }
   }
 

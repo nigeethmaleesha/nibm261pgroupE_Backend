@@ -72,6 +72,47 @@ const resendLoginOtp = async (req, res, next) => {
   }
 };
 
+const initiateForgotPassword = async (req, res, next) => {
+  try {
+    const result = await authService.initiateForgotPassword(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const resendForgotPasswordOtp = async (req, res, next) => {
+  try {
+    const result = await authService.resendForgotPasswordOtp(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const verifyForgotPasswordOtp = async (req, res, next) => {
+  try {
+    const result = await authService.verifyForgotPasswordOtp(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const changeForgottenPassword = async (req, res, next) => {
+  try {
+    const result = await authService.changeForgottenPassword(req.body);
+
+    // If this browser happened to have an older customer session, clear its
+    // cookies because a successful password reset revokes every active session.
+    clearAuthCookies(res);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const refreshToken = async (req, res, next) => {
   try {
     const result = await authService.refreshSession(getRefreshTokenFromRequest(req));
@@ -118,6 +159,10 @@ module.exports = {
   login,
   verifyLoginOtp,
   resendLoginOtp,
+  initiateForgotPassword,
+  resendForgotPasswordOtp,
+  verifyForgotPasswordOtp,
+  changeForgottenPassword,
   refreshToken,
   logout,
   me
