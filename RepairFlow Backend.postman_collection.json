@@ -1849,7 +1849,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{ownerEmail}}\"\n}",
+              "raw": "{\n  \"email\": \"admin@gmail.com\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1943,7 +1943,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"resetToken\": \"{{ownerResetToken}}\",\n  \"newPassword\": \"{{ownerNewPassword}}\",\n  \"confirmPassword\": \"{{ownerNewPassword}}\"\n}",
+              "raw": "{\n  \"resetToken\": \"{{ownerResetToken}}\",\n  \"newPassword\": \"123456789abc\",\n  \"confirmPassword\": \"123456789abc\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2225,6 +2225,111 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Repair Job Registration",
+      "item": [
+        {
+          "name": "Existing Registered Customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('customers is an array', () => pm.expect(data.customers).to.be.an('array'));\npm.test('At least one matching registered customer is returned', () => pm.expect(data.customers.length, 'Register + verify the customer first, then rerun this request.').to.be.above(0));\nif (data.customers && data.customers.length > 0) { pm.collectionVariables.set('repairCustomerId', data.customers[0].id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/customers?query={{testEmail}}&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{testEmail}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Owner/Staff-only lookup for an existing active, email-verified Customer account. Run after customer registration/verification and Owner/Staff login OTP verification."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Repair Job",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('repairJobIdempotencyKey')) {\n  pm.collectionVariables.set('repairJobIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));\n}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));\nconst data = pm.response.json();\npm.test('Created request is not a replay', () => pm.expect(data.idempotentReplay).to.eql(false));\npm.test('Initial status is Received', () => pm.expect(data.job.status).to.eql('Received'));\npm.test('Reference matches JOB-YYYYMM-XXXX', () => pm.expect(data.job.reference).to.match(/^JOB-\\d{6}-[A-Z2-9]{4}$/));\npm.test('Selected customer is linked', () => pm.expect(String(data.job.customer.id)).to.eql(pm.collectionVariables.get('repairCustomerId')));\npm.collectionVariables.set('repairJobId', data.job.id);\npm.collectionVariables.set('repairJobReference', data.job.reference);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{repairJobIdempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{repairCustomerId}}\",\n  \"deviceType\": \"Laptop\",\n  \"makeModel\": \"Dell Inspiron 15 3520\",\n  \"serialNumber\": \"DL-INS-3520-001\",\n  \"reportedFault\": \"Laptop is not charging and does not power on.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs"
+              ]
+            },
+            "description": "Creates one repair intake for an existing registered customer. Keep the same Idempotency-Key only when retrying the same logical submission."
+          },
+          "response": []
+        }
+      ],
+      "description": "Backend-first QA for Jira SCRUM-9. Prerequisites: customer registration + email verification completed; Owner/Staff login + OTP verification completed so the normal baseUrl host has valid Owner/Staff HttpOnly cookies."
     }
   ],
   "variable": [
@@ -2290,6 +2395,22 @@
     },
     {
       "key": "ownerResetToken",
+      "value": ""
+    },
+    {
+      "key": "repairCustomerId",
+      "value": ""
+    },
+    {
+      "key": "repairJobIdempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "repairJobId",
+      "value": ""
+    },
+    {
+      "key": "repairJobReference",
       "value": ""
     }
   ]
