@@ -73,7 +73,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"{{testFullName}}\",\n  \"email\": \"{{testEmail}}\",\n  \"contactNumber\": \"{{testContactNumber}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "raw": "{\n  \"fullName\": \"Nigeeth Maleesha\",\n  \"email\": \"kamkanamlage394@gmail.com\",\n  \"contactNumber\": \"0764846394\",\n  \"password\": \"123456789abc\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -118,7 +118,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{testEmail}}\"\n}",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -164,7 +164,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"otp\": \"{{registrationOtp}}\"\n}",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\",\n  \"otp\": \"838101\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -216,7 +216,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\",\n  \"password\": \"abc123456789\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -261,7 +261,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{testEmail}}\"\n}",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -307,7 +307,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"otp\": \"{{loginOtp}}\"\n}",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\",\n  \"otp\": \"912386\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -515,6 +515,1716 @@
         }
       ],
       "description": "Happy-path login plus complete JWT HttpOnly-cookie lifecycle."
+    },
+    {
+      "name": "Customer Forgot Password",
+      "item": [
+        {
+          "name": "Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('OTP is not exposed in response', () => pm.expect(data).to.not.have.property('otp'));\npm.test('Requires OTP', () => pm.expect(data.requiresOtp).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/forgot-password/initiate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "forgot-password",
+                "initiate"
+              ]
+            },
+            "description": "Starts password recovery for a verified customer. Expected: 200. For account-enumeration protection, the response is generic. For a real verified customer, check email or MongoDB -> repairflow -> otp -> purpose FORGOT_PASSWORD, then copy the 6-digit OTP to collection variable `forgotPasswordOtp`."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Forgot Password OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 after resend cooldown', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('OTP is not exposed in response', () => pm.expect(data).to.not.have.property('otp'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/forgot-password/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "forgot-password",
+                "resend-otp"
+              ]
+            },
+            "description": "Wait for OTP_RESEND_COOLDOWN_SECONDS (default 60 seconds) after the previous OTP send, then run this request. Expected after cooldown: 200. The old password-reset OTP is replaced. Copy the NEW OTP from email/MongoDB into `forgotPasswordOtp` before verifying."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Forgot Password OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('Reset token returned', () => pm.expect(data.resetToken).to.be.a('string').and.not.empty);\nif (data.resetToken) pm.collectionVariables.set('resetToken', data.resetToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"kamkanamlage394@gmail.com\",\n  \"otp\": \"871871\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/forgot-password/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "forgot-password",
+                "verify-otp"
+              ]
+            },
+            "description": "Verifies the FORGOT_PASSWORD OTP. Expected: 200. The API returns a short-lived resetToken, and this request automatically saves it to the collection variable `resetToken`. The OTP document is deleted after successful verification."
+          },
+          "response": []
+        },
+        {
+          "name": "Change Forgotten Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst data = pm.response.json();\npm.test('Password changed message returned', () => pm.expect(data.message).to.include('Password changed successfully'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"123456789abc\",\n  \"confirmPassword\": \"123456789abc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/forgot-password/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "forgot-password",
+                "change"
+              ]
+            },
+            "description": "Changes the password using the resetToken produced by the previous request. Expected: 200. Minimum password length is 12 characters. A successful reset revokes all existing customer sessions and makes the reset token unusable again."
+          },
+          "response": []
+        }
+      ],
+      "description": "Complete forgot-password flow. Use a verified customer account. OTP is stored in MongoDB `otp` collection with purpose `FORGOT_PASSWORD` and is also emailed. The verify request automatically saves the returned resetToken into the collection variable `resetToken`."
+    },
+    {
+      "name": "Owner Staff Setup",
+      "item": [
+        {
+          "name": "One-time Owner Staff Setup",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202',()=>pm.response.to.have.status(202));\nconst d=pm.response.json(); pm.test('Role is owner_staff',()=>pm.expect(d.account.role).to.eql('owner_staff')); pm.test('OTP required',()=>pm.expect(d.requiresOtp).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-owner-setup-key",
+                "value": "{{ownerSetupKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Nigeeth Maleesha\",\n  \"email\": \"admin@gmail.com\",\n  \"contactNumber\": \"0707234007\",\n  \"password\": \"abc123456789\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/setup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "setup"
+              ]
+            },
+            "description": "Requires header x-owner-setup-key. Creates the only owner_staff account as pending and emails an OTP."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Owner Setup OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/setup/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "setup",
+                "resend-otp"
+              ]
+            },
+            "description": "Wait for the OTP cooldown, then replace ownerSetupOtp with the NEW code from email/MongoDB."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Owner Setup OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201',()=>pm.response.to.have.status(201));\nconst d=pm.response.json(); pm.test('Owner verified',()=>{pm.expect(d.user.role).to.eql('owner_staff'); pm.expect(d.user.isEmailVerified).to.eql(true);});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\",\n  \"otp\": \"987142\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/setup/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "setup",
+                "verify-otp"
+              ]
+            },
+            "description": "Activates the one Owner/Staff account."
+          },
+          "response": []
+        },
+        {
+          "name": "Owner Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202',()=>pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\",\n  \"password\": \"abc123456789\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Validates credentials and sends OWNER_STAFF_LOGIN OTP."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Owner Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/login/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "login",
+                "resend-otp"
+              ]
+            },
+            "description": "Requires an existing pending owner login OTP and cooldown."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Owner Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\nconst d=pm.response.json(); pm.test('Owner session',()=>{pm.expect(d.user.role).to.eql('owner_staff'); pm.expect(d.tokenStorage).to.eql('httpOnly_cookies');});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\",\n  \"otp\": \"354089\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/login/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "login",
+                "verify-otp"
+              ]
+            },
+            "description": "Creates Owner/Staff session using HttpOnly cookies."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Owner Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\npm.test('Password omitted',()=>pm.expect(pm.response.json().user).to.not.have.property('password'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Protected Owner/Staff profile endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Owner Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/refresh-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "refresh-token"
+              ]
+            },
+            "description": "Rotates Owner/Staff access and refresh HttpOnly cookies."
+          },
+          "response": []
+        }
+      ],
+      "description": "Run Owner/Staff Setup only once on a fresh database. After the first setup request creates the pending owner_staff account, use resend/verify; a second setup request is rejected. Login and session tokens use HttpOnly cookies."
+    },
+    {
+      "name": "Technician Account Creation",
+      "item": [
+        {
+          "name": "Create Technician",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202',()=>pm.response.to.have.status(202));\nconst d=pm.response.json(); if(d.technician?.id) pm.collectionVariables.set('technicianId',d.technician.id); pm.test('Technician role',()=>pm.expect(d.technician.role).to.eql('technician')); pm.test('Password omitted',()=>pm.expect(d.technician).to.not.have.property('password'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Technician 01\",\n  \"email\": \"tech01@gmail.com\",\n  \"contactNumber\": \"0764846393\",\n  \"password\": \"abc123456789\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/technicians",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "technicians"
+              ]
+            },
+            "description": "Owner/Staff only. Saves pending technician and sends TECHNICIAN_REGISTER OTP."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Technician Create OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/activate/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "activate",
+                "resend-otp"
+              ]
+            },
+            "description": "Use only while technician is pending and after cooldown."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Technician Create OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201',()=>pm.response.to.have.status(201));\nconst d=pm.response.json(); pm.test('Technician verified',()=>{pm.expect(d.user.role).to.eql('technician');pm.expect(d.user.isEmailVerified).to.eql(true);});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\",\n  \"otp\": \"769253\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/activate/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "activate",
+                "verify-otp"
+              ]
+            },
+            "description": "Activates technician account."
+          },
+          "response": []
+        }
+      ],
+      "description": "Keep the Owner/Staff session from the previous folder. Owner/Staff creates the pending technician. The technician then verifies the email OTP. Resend is optional and requires the cooldown."
+    },
+    {
+      "name": "Owner Staff - Technician Listing & Toggle",
+      "item": [
+        {
+          "name": "List Active Technicians",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/technicians",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "technicians"
+              ]
+            },
+            "description": "Default assignment list: verified + active technicians only."
+          },
+          "response": []
+        },
+        {
+          "name": "List All Technicians",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/technicians?status=all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "technicians"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all"
+                }
+              ]
+            },
+            "description": "Owner settings view, includes enabled and disabled verified technicians."
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Technician",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/technicians/{{technicianId}}/toggle-active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "technicians",
+                "{{technicianId}}",
+                "toggle-active"
+              ]
+            },
+            "description": "NO request body. Flips technician isActive true/false. Disabling revokes sessions."
+          },
+          "response": []
+        },
+        {
+          "name": "Enable Technician",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/technicians/{{technicianId}}/toggle-active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "technicians",
+                "{{technicianId}}",
+                "toggle-active"
+              ]
+            },
+            "description": "NO request body. Flips technician isActive true/false. Disabling revokes sessions."
+          },
+          "response": []
+        }
+      ],
+      "description": "Run after technician activation while the Owner/Staff cookie session is still active. Toggle requests have no body. The sample sequence disables and then re-enables the technician so technician login can be tested afterwards."
+    },
+    {
+      "name": "Technician Login, Profile & Refresh",
+      "item": [
+        {
+          "name": "Technician Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202',()=>pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\",\n  \"password\": \"abc123456789\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Sends TECHNICIAN_LOGIN OTP."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Technician Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/login/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "login",
+                "resend-otp"
+              ]
+            },
+            "description": "Requires pending login OTP and cooldown."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Technician Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\nconst d=pm.response.json(); pm.test('Technician session',()=>pm.expect(d.user.role).to.eql('technician'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\",\n  \"otp\": \"591474\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/login/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "login",
+                "verify-otp"
+              ]
+            },
+            "description": "Creates technician HttpOnly-cookie session."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Technician Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\npm.test('Password omitted',()=>pm.expect(pm.response.json().user).to.not.have.property('password'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Protected technician profile."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Technician Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/refresh-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "refresh-token"
+              ]
+            },
+            "description": "Rotates technician session cookies."
+          },
+          "response": []
+        }
+      ],
+      "description": "Run after the technician has been re-enabled. Verify Login OTP creates the technician HttpOnly-cookie session."
+    },
+    {
+      "name": "Technician Forgot Password",
+      "item": [
+        {
+          "name": "Technician Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/forgot-password/initiate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "forgot-password",
+                "initiate"
+              ]
+            },
+            "description": "Sends technician reset OTP if active/verified."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Technician Forgot OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/forgot-password/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "forgot-password",
+                "resend-otp"
+              ]
+            },
+            "description": "Wait for cooldown."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Technician Forgot OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\nconst d=pm.response.json(); if(d.resetToken) pm.collectionVariables.set('technicianResetToken',d.resetToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech01@gmail.com\",\n  \"otp\": \"637550\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/forgot-password/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "forgot-password",
+                "verify-otp"
+              ]
+            },
+            "description": "Returns reset token and saves it."
+          },
+          "response": []
+        },
+        {
+          "name": "Change Technician Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"{{technicianResetToken}}\",\n  \"newPassword\": \"123456789abc\",\n  \"confirmPassword\": \"123456789abc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/forgot-password/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "forgot-password",
+                "change"
+              ]
+            },
+            "description": "Changes password and revokes existing technician sessions."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Owner Staff Forgot Password",
+      "item": [
+        {
+          "name": "Owner Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/forgot-password/initiate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "forgot-password",
+                "initiate"
+              ]
+            },
+            "description": "Sends owner password reset OTP if eligible."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Owner Forgot OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/forgot-password/resend-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "forgot-password",
+                "resend-otp"
+              ]
+            },
+            "description": "Wait for cooldown, then use the new OTP."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Owner Forgot OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\nconst d=pm.response.json(); if(d.resetToken) pm.collectionVariables.set('ownerResetToken',d.resetToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\",\n  \"otp\": \"388005\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/forgot-password/verify-otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "forgot-password",
+                "verify-otp"
+              ]
+            },
+            "description": "Returns short-lived reset token and saves it."
+          },
+          "response": []
+        },
+        {
+          "name": "Change Owner Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resetToken\": \"{{ownerResetToken}}\",\n  \"newPassword\": \"{{ownerNewPassword}}\",\n  \"confirmPassword\": \"{{ownerNewPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/forgot-password/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "forgot-password",
+                "change"
+              ]
+            },
+            "description": "Changes owner password and revokes all owner sessions."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "RBAC & Security Checks",
+      "item": [
+        {
+          "name": "No Session - Create Technician Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401',()=>pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Blocked Tech\",\n  \"email\": \"blocked@example.com\",\n  \"contactNumber\": \"0700000000\",\n  \"password\": \"StrongPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{noCookieBaseUrl}}/api/staff/technicians",
+              "host": [
+                "{{noCookieBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "technicians"
+              ]
+            },
+            "description": "Uses 127.0.0.1 to avoid localhost cookies. Expected 401."
+          },
+          "response": []
+        },
+        {
+          "name": "Technician Session - Create Technician Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403',()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Blocked Tech\",\n  \"email\": \"blocked2@example.com\",\n  \"contactNumber\": \"0700000001\",\n  \"password\": \"StrongPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/technicians",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "technicians"
+              ]
+            },
+            "description": "Run after technician login. Expected 403."
+          },
+          "response": []
+        },
+        {
+          "name": "Technician Session - Owner Profile Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403',()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Run after technician login. Expected 403."
+          },
+          "response": []
+        },
+        {
+          "name": "Owner Session - Technician Profile Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403',()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Run after owner login. Expected 403."
+          },
+          "response": []
+        }
+      ],
+      "description": "Run these with the indicated current cookie session. Postman shares cookies per host, so log in as the intended role immediately before each role-specific test."
+    },
+    {
+      "name": "Owner Staff & Technician Logout",
+      "item": [
+        {
+          "name": "Owner or Technician Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Use this while logged in as owner_staff. Clears current session and cookies."
+          },
+          "response": []
+        },
+        {
+          "name": "Technician Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Use this while logged in as technician. Clears current session and cookies."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -565,6 +2275,22 @@
     {
       "key": "refreshCookieName",
       "value": "repairflow_refresh_token"
+    },
+    {
+      "key": "resetToken",
+      "value": ""
+    },
+    {
+      "key": "technicianId",
+      "value": ""
+    },
+    {
+      "key": "technicianResetToken",
+      "value": ""
+    },
+    {
+      "key": "ownerResetToken",
+      "value": ""
     }
   ]
 }
