@@ -1,0 +1,50 @@
+const express = require('express');
+const internalAuthController = require('../controllers/internalAuthController');
+const technicianManagementController = require('../controllers/technicianManagementController');
+const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
+const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
+const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
+
+const router = express.Router();
+const staffAuth = internalAuthController.staffAuth;
+
+// One-time Owner/Staff system setup. The initial create request is protected by
+// x-owner-setup-key so a public user cannot claim the privileged role.
+router.post('/auth/setup', registerLimiter, requireOwnerSetupKey, internalAuthController.setupOwnerStaff);
+router.post('/auth/setup/verify-otp', otpLimiter, internalAuthController.verifyOwnerStaffSetupOtp);
+router.post('/auth/setup/resend-otp', otpLimiter, internalAuthController.resendOwnerStaffSetupOtp);
+
+// Owner/Staff authentication lifecycle.
+router.post('/auth/login', loginLimiter, staffAuth.login);
+router.post('/auth/login/verify-otp', otpLimiter, staffAuth.verifyLoginOtp);
+router.post('/auth/login/resend-otp', otpLimiter, staffAuth.resendLoginOtp);
+router.post('/auth/forgot-password/initiate', otpLimiter, staffAuth.initiateForgotPassword);
+router.post('/auth/forgot-password/resend-otp', otpLimiter, staffAuth.resendForgotPasswordOtp);
+router.post('/auth/forgot-password/verify-otp', otpLimiter, staffAuth.verifyForgotPasswordOtp);
+router.post('/auth/forgot-password/change', loginLimiter, staffAuth.changeForgottenPassword);
+router.post('/auth/refresh-token', staffAuth.refreshToken);
+router.post('/auth/logout', staffAuth.logout);
+router.get('/auth/me', protect, authorizeRoles('owner_staff'), staffAuth.me);
+
+// SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.
+router.post(
+  '/technicians',
+  protect,
+  authorizeRoles('owner_staff'),
+  registerLimiter,
+  technicianManagementController.createTechnician
+);
+router.get(
+  '/technicians',
+  protect,
+  authorizeRoles('owner_staff'),
+  technicianManagementController.listTechnicians
+);
+router.patch(
+  '/technicians/:technicianId/toggle-active',
+  protect,
+  authorizeRoles('owner_staff'),
+  technicianManagementController.toggleTechnicianActive
+);
+
+module.exports = router;

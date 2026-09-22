@@ -138,3 +138,19 @@ Recommended test order:
 10. Get Me After Logout -> expected `401`
 
 See `docs/OTP_FLOW.md` and `docs/POSTMAN_TESTING.md` for details.
+
+## Staff / Technician extension
+
+This version also implements the Staff and Technician Access / Technician Account Creation backend:
+
+- one-time `owner_staff` setup protected by `OWNER_SETUP_KEY`
+- owner/staff email OTP verification, login OTP/resend, forgot password OTP/resend, profile, refresh and logout
+- Owner/Staff-only technician creation
+- technician activation OTP/resend
+- active technician listing for assignment
+- technician enable/disable toggle with no request body
+- technician login OTP/resend, forgot password OTP/resend, profile, refresh and logout
+- RBAC middleware for customer / owner_staff / technician separation
+- merge-safe technician job ownership middleware factory for the future Job module
+
+See `docs/STAFF_TECHNICIAN_BACKEND.md` and import `RepairFlow Backend - Staff Technician.postman_collection.json`.

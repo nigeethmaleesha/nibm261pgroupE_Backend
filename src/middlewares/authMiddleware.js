@@ -18,8 +18,12 @@ const protect = async (req, res, next) => {
 
     const user = await userRepository.findById(decoded.sub, { includeSessions: true });
 
-    if (!user || !user.isActive) {
+    if (!user || !user.isActive || !user.isEmailVerified) {
       return res.status(401).json({ message: 'Session is no longer valid' });
+    }
+
+    if (decoded.role && decoded.role !== user.role) {
+      return res.status(401).json({ message: 'Session role is no longer valid' });
     }
 
     const activeSession = (user.activeSessions || []).find(
@@ -57,7 +61,14 @@ const authorizeRoles = (...allowedRoles) => (req, res, next) => {
   return next();
 };
 
+const ownerStaffOnly = authorizeRoles('owner_staff');
+const technicianOnly = authorizeRoles('technician');
+const customerOnly = authorizeRoles('customer');
+
 module.exports = {
   protect,
-  authorizeRoles
+  authorizeRoles,
+  ownerStaffOnly,
+  technicianOnly,
+  customerOnly
 };
