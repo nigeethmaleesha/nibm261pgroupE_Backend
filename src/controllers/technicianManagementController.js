@@ -1,4 +1,5 @@
 const technicianManagementService = require('../services/technicianManagementService');
+const internalAuthService = require('../services/internalAuthService');
 
 const createTechnician = async (req, res, next) => {
   try {
@@ -32,8 +33,29 @@ const toggleTechnicianActive = async (req, res, next) => {
   }
 };
 
+
+const verifyTechnicianOtp = async (req, res, next) => {
+  try {
+    const result = await internalAuthService.verifyTechnicianActivationOtp(req.body);
+    return res.status(201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const resendTechnicianOtp = async (req, res, next) => {
+  try {
+    const result = await internalAuthService.resendTechnicianActivationOtp(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createTechnician,
   listTechnicians,
-  toggleTechnicianActive
+  toggleTechnicianActive,
+  verifyTechnicianOtp,
+  resendTechnicianOtp
 };

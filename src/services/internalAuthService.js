@@ -414,6 +414,181 @@ const changeForgottenPassword = async (payload = {}, role) => {
   };
 };
 
+
+
+const INTERNAL_ROLES = ['owner_staff', 'technician'];
+
+const findInternalUserByEmail = async (
+  email,
+  { includePassword = false, includeSessions = false } = {}
+) => {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+
+  const user = await userRepository.findByEmail(normalizedEmail, {
+    includePassword,
+    includeSessions
+  });
+
+  if (!user || !INTERNAL_ROLES.includes(user.role)) return null;
+  return user;
+};
+
+const loginInternalByEmail = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+  const password = String(payload.password || '');
+
+  if (!email || !password) {
+    throw createHttpError('Email and password are required', 400);
+  }
+
+  const user = await findInternalUserByEmail(email, { includePassword: true });
+
+  if (!user || !(await user.comparePassword(password))) {
+    throw createHttpError(GENERIC_LOGIN_ERROR, 401);
+  }
+
+  const config = getRoleConfig(user.role);
+
+  if (!user.isActive) {
+    throw createHttpError(`${config.label} account is disabled`, 403);
+  }
+
+  if (!user.isEmailVerified) {
+    throw createHttpError('Please verify the account email before logging in', 403);
+  }
+
+  const otpInfo = await otpService.issueOtp(user, config.loginPurpose);
+  return {
+    message: 'Credentials accepted. A login OTP has been sent to the registered email.',
+    requiresOtp: true,
+    ...otpInfo
+  };
+};
+
+const verifyInternalLoginOtpByEmail = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+  if (!email) throw createHttpError('Email is required', 400);
+
+  const user = await findInternalUserByEmail(email, { includeSessions: true });
+  if (!user || !user.isEmailVerified || !user.isActive) {
+    throw createHttpError('Login verification is no longer valid. Please log in again.', 401);
+  }
+
+  const config = getRoleConfig(user.role);
+  await otpService.verifyOtp(user, payload.otp, config.loginPurpose);
+  const tokens = await sessionService.createSession(user);
+
+  return {
+    message: 'Login OTP verified successfully',
+    user: sanitizeUser(user),
+    ...tokens
+  };
+};
+
+const resendInternalLoginOtpByEmail = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+  if (!email) throw createHttpError('Email is required', 400);
+
+  const user = await findInternalUserByEmail(email);
+  if (!user || !user.isEmailVerified || !user.isActive) {
+    throw createHttpError('No pending login OTP request was found for this email', 400);
+  }
+
+  const config = getRoleConfig(user.role);
+  const otpInfo = await otpService.resendOtp(user, config.loginPurpose);
+  return {
+    message: 'A new login OTP has been sent to the registered email.',
+    requiresOtp: true,
+    ...otpInfo
+  };
+};
+
+const initiateInternalForgotPasswordByEmail = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+
+  if (!email) throw createHttpError('Email is required', 400);
+  if (!EMAIL_REGEX.test(email)) throw createHttpError('Please provide a valid email address', 400);
+
+  const genericMessage = 'If a verified active staff account matches that email, a password reset OTP has been sent.';
+  const user = await findInternalUserByEmail(email);
+
+  if (!user || !user.isEmailVerified || !user.isActive) {
+    return { message: genericMessage, requiresOtp: true };
+  }
+
+  const config = getRoleConfig(user.role);
+  const otpInfo = await otpService.issueOtp(user, config.forgotPurpose);
+  return { message: genericMessage, requiresOtp: true, ...otpInfo };
+};
+
+const resendInternalForgotPasswordOtpByEmail = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+
+  if (!email) throw createHttpError('Email is required', 400);
+  if (!EMAIL_REGEX.test(email)) throw createHttpError('Please provide a valid email address', 400);
+
+  const genericMessage = 'If a password reset request is pending for that email, a new OTP has been sent.';
+  const user = await findInternalUserByEmail(email);
+
+  if (!user || !user.isEmailVerified || !user.isActive) {
+    return { message: genericMessage, requiresOtp: true };
+  }
+
+  try {
+    const config = getRoleConfig(user.role);
+    const otpInfo = await otpService.resendOtp(user, config.forgotPurpose);
+    return { message: genericMessage, requiresOtp: true, ...otpInfo };
+  } catch (error) {
+    if (error.statusCode === 400 && String(error.message || '').startsWith('No pending')) {
+      return { message: genericMessage, requiresOtp: true };
+    }
+    throw error;
+  }
+};
+
+const verifyInternalForgotPasswordOtpByEmail = async (payload = {}) => {
+  const email = normalizeEmail(payload.email);
+  if (!email) throw createHttpError('Email is required', 400);
+
+  const user = await findInternalUserByEmail(email, { includePassword: true });
+  if (!user || !user.isEmailVerified || !user.isActive) {
+    throw createHttpError('Invalid or expired password reset request', 400);
+  }
+
+  const config = getRoleConfig(user.role);
+  await otpService.verifyOtp(user, payload.otp, config.forgotPurpose);
+
+  return {
+    message: 'Password reset OTP verified successfully.',
+    resetToken: signPasswordResetToken(user),
+    resetTokenExpiresIn: PASSWORD_RESET_TOKEN_EXPIRES_IN
+  };
+};
+
+const changeInternalForgottenPasswordByToken = async (payload = {}) => {
+  const resetToken = String(payload.resetToken || '').trim();
+  if (!resetToken) throw createHttpError('Password reset token is required', 401);
+
+  let decoded;
+  try {
+    decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+  } catch (error) {
+    throw createHttpError('Invalid or expired password reset token', 401);
+  }
+
+  if (!INTERNAL_ROLES.includes(decoded.role)) {
+    throw createHttpError('Invalid password reset token', 401);
+  }
+
+  return changeForgottenPassword(payload, decoded.role);
+};
+
+const refreshInternalSession = (refreshToken) => sessionService.refreshSession(
+  refreshToken,
+  INTERNAL_ROLES
+);
+
 const refreshSession = (refreshToken, role) => sessionService.refreshSession(refreshToken, [role]);
 const logoutCurrentSession = (tokens) => sessionService.logoutCurrentSession(tokens);
 
@@ -434,5 +609,13 @@ module.exports = {
   verifyForgotPasswordOtp,
   changeForgottenPassword,
   refreshSession,
-  logoutCurrentSession
+  logoutCurrentSession,
+  loginInternalByEmail,
+  verifyInternalLoginOtpByEmail,
+  resendInternalLoginOtpByEmail,
+  initiateInternalForgotPasswordByEmail,
+  resendInternalForgotPasswordOtpByEmail,
+  verifyInternalForgotPasswordOtpByEmail,
+  changeInternalForgottenPasswordByToken,
+  refreshInternalSession
 };

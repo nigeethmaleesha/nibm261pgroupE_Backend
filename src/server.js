@@ -6,6 +6,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const staffRoutes = require('./routes/staffRoutes');
 const technicianRoutes = require('./routes/technicianRoutes');
+const internalRoutes = require('./routes/internalRoutes');
 const { notFound, errorHandler } = require('./middlewares/errorMiddleware');
 
 const app = express();
@@ -39,6 +40,7 @@ app.get('/api/health', (req, res) => res.status(200).json({
 app.use('/api/auth', authRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/technician', technicianRoutes);
+app.use('/api/internal', internalRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

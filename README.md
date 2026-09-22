@@ -1,156 +1,27 @@
-# RepairFlow Backend - Sprint 1 Customer Authentication
+# RepairFlow Backend - Auto Role Login Patch
 
-Node.js + Express + MongoDB backend for the RepairFlow Agile coursework.
+Replace/add these files in the existing backend.
 
-## Implemented scope
+## New shared internal auth endpoints
 
-- Customer registration
-- Registration email OTP verification
-- Registration OTP resend
-- Customer login
-- Login email OTP verification
-- Login OTP resend
-- Separate MongoDB `Otp` model/collection, following the supplied PrintDrop backend approach
-- JWT access token + refresh token
-- HttpOnly authentication cookies
-- Refresh-token rotation
-- Logout/session invalidation
-- Protected `GET /api/auth/me`
-- Customer role enforcement
-- Unique email index and contact-number index
-- Postman collection
+- POST `/api/internal/auth/login`
+- POST `/api/internal/auth/login/verify-otp`
+- POST `/api/internal/auth/login/resend-otp`
+- POST `/api/internal/auth/forgot-password/initiate`
+- POST `/api/internal/auth/forgot-password/resend-otp`
+- POST `/api/internal/auth/forgot-password/verify-otp`
+- POST `/api/internal/auth/forgot-password/change`
+- POST `/api/internal/auth/refresh-token`
+- POST `/api/internal/auth/logout`
+- GET `/api/internal/auth/me`
 
-## OTP storage
+The backend resolves `owner_staff` vs `technician` from the account email. The frontend no longer sends a selected role.
 
-OTP values are **not embedded in `users`**. They are stored in a separate `otp` collection through `src/models/Otp.js`.
+## Technician creation verification
 
-The OTP is stored as plaintext intentionally for this coursework/testing flow so it can be inspected in MongoDB Atlas, matching the provided PrintDrop reference project. It is never returned from the API, is deleted after successful verification, expires automatically through a TTL index, and is replaced on resend.
+Owner/Staff now completes technician email verification inside the technician-management flow using:
 
+- POST `/api/staff/technicians/verify-otp`
+- POST `/api/staff/technicians/resend-otp`
 
-## Run locally
-
-```bash
-npm install
-npm run db:sync-indexes
-npm run email:check
-npm run dev
-```
-
-Default API URL:
-
-```text
-http://localhost:5000
-```
-
-Health check:
-
-```text
-GET /api/health
-```
-
-## Authentication endpoints
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| POST | `/api/auth/register` | Validate customer details, create/update unverified user, send registration OTP |
-| POST | `/api/auth/register/verify-otp` | Verify registration email + OTP |
-| POST | `/api/auth/register/resend-otp` | Replace and resend registration OTP |
-| POST | `/api/auth/login` | Verify email/password and send login OTP |
-| POST | `/api/auth/login/verify-otp` | Verify login OTP and create JWT session |
-| POST | `/api/auth/login/resend-otp` | Replace and resend pending login OTP |
-| POST | `/api/auth/refresh-token` | Rotate refresh token and issue a new access token |
-| POST | `/api/auth/logout` | Revoke current session and clear cookies |
-| GET | `/api/auth/me` | Get authenticated customer details |
-
-### Registration body
-
-```json
-{
-  "fullName": "Test Customer",
-  "email": "customer@example.com",
-  "contactNumber": "0771234567",
-  "password": "StrongPass123!"
-}
-```
-
-### OTP verification body
-
-```json
-{
-  "email": "customer@example.com",
-  "otp": "123456"
-}
-```
-
-### Login body
-
-```json
-{
-  "email": "customer@example.com",
-  "password": "StrongPass123!"
-}
-```
-
-## MongoDB OTP collection
-
-After requesting an OTP, inspect:
-
-```text
-repairflow
-  ├── users
-  └── otp
-```
-
-The `otp` document contains `email`, `purpose`, `otp`, `expiresAt`, `attempts`, and resend metadata. A successful verification deletes the matching OTP record.
-
-## Environment
-
-A local `.env` can be used for testing, but `.gitignore` excludes `.env` and `.env.*` from Git. `.env.example` contains only placeholders and is safe to commit.
-
-Before pushing:
-
-```bash
-git check-ignore -v .env
-git ls-files .env
-```
-
-The second command should print nothing.
-
-## Postman
-
-Import:
-
-```text
-postman/RepairFlow_Auth_Separate_Otp_Model.postman_collection.json
-```
-
-Recommended test order:
-
-1. Registration - Request OTP
-2. Check MongoDB `otp` collection or email inbox
-3. Registration - Verify OTP
-4. Login - Request OTP
-5. Check MongoDB `otp` collection or email inbox
-6. Login - Verify OTP
-7. Get Me
-8. Refresh Token
-9. Logout
-10. Get Me After Logout -> expected `401`
-
-See `docs/OTP_FLOW.md` and `docs/POSTMAN_TESTING.md` for details.
-
-## Staff / Technician extension
-
-This version also implements the Staff and Technician Access / Technician Account Creation backend:
-
-- one-time `owner_staff` setup protected by `OWNER_SETUP_KEY`
-- owner/staff email OTP verification, login OTP/resend, forgot password OTP/resend, profile, refresh and logout
-- Owner/Staff-only technician creation
-- technician activation OTP/resend
-- active technician listing for assignment
-- technician enable/disable toggle with no request body
-- technician login OTP/resend, forgot password OTP/resend, profile, refresh and logout
-- RBAC middleware for customer / owner_staff / technician separation
-- merge-safe technician job ownership middleware factory for the future Job module
-
-See `docs/STAFF_TECHNICIAN_BACKEND.md` and import `RepairFlow Backend - Staff Technician.postman_collection.json`.
+The existing public activation endpoints can remain for backward compatibility, but the new Staff Portal does not expose a public technician activation page.
