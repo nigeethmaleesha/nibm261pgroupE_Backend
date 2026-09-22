@@ -31,31 +31,59 @@ const getTransporter = () => {
 const getOtpEmailContent = (purpose) => {
   const normalizedPurpose = String(purpose || '').trim().toUpperCase();
 
-  if (normalizedPurpose === 'REGISTER') {
-    return {
-      title: 'Registration Verification',
-      actionLabel: 'registration',
-      subject: 'RepairFlow - Registration OTP'
-    };
+  const content = {
+    REGISTER: {
+      title: 'Customer Registration Verification',
+      actionLabel: 'customer registration',
+      subject: 'RepairFlow - Customer Registration OTP'
+    },
+    LOGIN: {
+      title: 'Customer Login Verification',
+      actionLabel: 'customer login',
+      subject: 'RepairFlow - Customer Login OTP'
+    },
+    FORGOT_PASSWORD: {
+      title: 'Customer Password Reset Verification',
+      actionLabel: 'customer password reset',
+      subject: 'RepairFlow - Customer Password Reset OTP'
+    },
+    OWNER_STAFF_REGISTER: {
+      title: 'Owner/Staff Setup Verification',
+      actionLabel: 'Owner/Staff account setup',
+      subject: 'RepairFlow - Owner/Staff Setup OTP'
+    },
+    OWNER_STAFF_LOGIN: {
+      title: 'Owner/Staff Login Verification',
+      actionLabel: 'Owner/Staff login',
+      subject: 'RepairFlow - Owner/Staff Login OTP'
+    },
+    OWNER_STAFF_FORGOT_PASSWORD: {
+      title: 'Owner/Staff Password Reset Verification',
+      actionLabel: 'Owner/Staff password reset',
+      subject: 'RepairFlow - Owner/Staff Password Reset OTP'
+    },
+    TECHNICIAN_REGISTER: {
+      title: 'Technician Account Verification',
+      actionLabel: 'technician account activation',
+      subject: 'RepairFlow - Technician Activation OTP'
+    },
+    TECHNICIAN_LOGIN: {
+      title: 'Technician Login Verification',
+      actionLabel: 'technician login',
+      subject: 'RepairFlow - Technician Login OTP'
+    },
+    TECHNICIAN_FORGOT_PASSWORD: {
+      title: 'Technician Password Reset Verification',
+      actionLabel: 'technician password reset',
+      subject: 'RepairFlow - Technician Password Reset OTP'
+    }
+  }[normalizedPurpose];
+
+  if (!content) {
+    throw new Error(`Unsupported email OTP purpose: ${purpose}`);
   }
 
-  if (normalizedPurpose === 'LOGIN') {
-    return {
-      title: 'Login Verification',
-      actionLabel: 'login',
-      subject: 'RepairFlow - Login OTP'
-    };
-  }
-
-  if (normalizedPurpose === 'FORGOT_PASSWORD') {
-    return {
-      title: 'Password Reset Verification',
-      actionLabel: 'password reset',
-      subject: 'RepairFlow - Password Reset OTP'
-    };
-  }
-
-  throw new Error(`Unsupported email OTP purpose: ${purpose}`);
+  return content;
 };
 
 const sendOtpEmail = async ({ email, otp, purpose, expiresInMinutes }) => {
