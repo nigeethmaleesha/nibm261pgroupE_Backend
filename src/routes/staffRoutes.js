@@ -27,6 +27,21 @@ router.post('/auth/logout', staffAuth.logout);
 router.get('/auth/me', protect, authorizeRoles('owner_staff'), staffAuth.me);
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.
+
+router.post(
+  '/technicians/verify-otp',
+  protect,
+  authorizeRoles('owner_staff'),
+  otpLimiter,
+  technicianManagementController.verifyTechnicianOtp
+);
+router.post(
+  '/technicians/resend-otp',
+  protect,
+  authorizeRoles('owner_staff'),
+  otpLimiter,
+  technicianManagementController.resendTechnicianOtp
+);
 router.post(
   '/technicians',
   protect,
