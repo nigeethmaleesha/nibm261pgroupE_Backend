@@ -1,12 +1,12 @@
 {
   "name": "repairflow-backend",
   "version": "1.0.0",
-  "description": "RepairFlow Agile coursework backend - customer registration/login with separate MongoDB OTP model and JWT sessions",
+  "description": "RepairFlow Agile coursework backend - customer, Owner/Staff and technician authentication with OTP, RBAC and JWT sessions",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "check": "node --check src/server.js && node --check src/services/authService.js && node --check src/services/otpService.js && node --check src/services/emailService.js && node --check src/controllers/authController.js && node --check src/models/User.js && node --check src/models/Otp.js",
+    "check": "node --check src/server.js && node --check src/services/authService.js && node --check src/services/otpService.js && node --check src/services/emailService.js && node --check src/services/sessionService.js && node --check src/services/internalAuthService.js && node --check src/services/technicianManagementService.js && node --check src/controllers/authController.js && node --check src/controllers/internalAuthController.js && node --check src/controllers/technicianManagementController.js && node --check src/models/User.js && node --check src/models/Otp.js && node --check src/routes/staffRoutes.js && node --check src/routes/technicianRoutes.js && node --check src/middlewares/ownerSetupMiddleware.js && node --check src/middlewares/technicianJobAccessMiddleware.js",
     "db:sync-indexes": "node scripts/syncIndexes.js",
     "email:check": "node scripts/checkEmailConfig.js"
   },

@@ -18,7 +18,17 @@ const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 const normalizePurpose = (purpose) => {
   const normalized = String(purpose || '').trim().toUpperCase();
 
-  if (!['REGISTER', 'LOGIN', 'FORGOT_PASSWORD'].includes(normalized)) {
+  if (![
+    'REGISTER',
+    'LOGIN',
+    'FORGOT_PASSWORD',
+    'OWNER_STAFF_REGISTER',
+    'OWNER_STAFF_LOGIN',
+    'OWNER_STAFF_FORGOT_PASSWORD',
+    'TECHNICIAN_REGISTER',
+    'TECHNICIAN_LOGIN',
+    'TECHNICIAN_FORGOT_PASSWORD'
+  ].includes(normalized)) {
     throw new Error(`Unsupported OTP purpose: ${purpose}`);
   }
 
@@ -88,11 +98,11 @@ const issueOtp = async (user, purpose) => {
 };
 
 const missingOtpMessage = (purpose) => {
-  if (purpose === 'REGISTER') {
+  if (['REGISTER', 'OWNER_STAFF_REGISTER', 'TECHNICIAN_REGISTER'].includes(purpose)) {
     return 'No pending registration OTP request was found. Please register again.';
   }
 
-  if (purpose === 'FORGOT_PASSWORD') {
+  if (['FORGOT_PASSWORD', 'OWNER_STAFF_FORGOT_PASSWORD', 'TECHNICIAN_FORGOT_PASSWORD'].includes(purpose)) {
     return 'No pending password reset OTP request was found. Please request a password reset again.';
   }
 
