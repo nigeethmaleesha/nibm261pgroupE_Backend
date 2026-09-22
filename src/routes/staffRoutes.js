@@ -1,6 +1,7 @@
 const express = require('express');
 const internalAuthController = require('../controllers/internalAuthController');
 const technicianManagementController = require('../controllers/technicianManagementController');
+const repairJobController = require('../controllers/repairJobController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -25,6 +26,22 @@ router.post('/auth/forgot-password/change', loginLimiter, staffAuth.changeForgot
 router.post('/auth/refresh-token', staffAuth.refreshToken);
 router.post('/auth/logout', staffAuth.logout);
 router.get('/auth/me', protect, authorizeRoles('owner_staff'), staffAuth.me);
+
+
+// SCRUM-9: repair intake support. Owner/Staff selects an existing registered
+// customer, then creates one Received repair job using an idempotency key.
+router.get(
+  '/customers',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.lookupCustomers
+);
+router.post(
+  '/jobs',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.createRepairJob
+);
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.
 
