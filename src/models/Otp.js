@@ -17,7 +17,17 @@ const otpSchema = new mongoose.Schema(
     },
     purpose: {
       type: String,
-      enum: ['REGISTER', 'LOGIN', 'FORGOT_PASSWORD'],
+      enum: [
+        'REGISTER',
+        'LOGIN',
+        'FORGOT_PASSWORD',
+        'OWNER_STAFF_REGISTER',
+        'OWNER_STAFF_LOGIN',
+        'OWNER_STAFF_FORGOT_PASSWORD',
+        'TECHNICIAN_REGISTER',
+        'TECHNICIAN_LOGIN',
+        'TECHNICIAN_FORGOT_PASSWORD'
+      ],
       required: true
     },
     // Plaintext is intentional for this coursework implementation so the

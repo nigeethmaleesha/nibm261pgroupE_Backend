@@ -82,6 +82,17 @@ const userSchema = new mongoose.Schema(
 userSchema.index({ email: 1 }, { unique: true, name: 'unique_user_email' });
 userSchema.index({ contactNumber: 1 }, { name: 'user_contact_number_idx' });
 
+// Only one Owner/Staff account may exist in the system. The partial unique
+// index protects this rule even if two setup requests arrive at the same time.
+userSchema.index(
+  { role: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { role: 'owner_staff' },
+    name: 'one_owner_staff_only'
+  }
+);
+
 userSchema.pre('save', async function hashPassword() {
   if (!this.isModified('password')) {
     return;
