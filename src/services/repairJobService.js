@@ -105,6 +105,17 @@ const serializeRepairJob = (job) => ({
   updatedAt: job.updatedAt
 });
 
+// SCRUM-41: lightweight DTO for the technician job list.
+const serializeJobListItem = (job) => ({
+  id: job._id,
+  reference: job.reference,
+  deviceType: job.deviceType,
+  makeModel: job.makeModel,
+  reportedFault: job.reportedFault,
+  status: job.status,
+  receivedAt: job.receivedAt
+});
+
 const ensureReplayMatches = (job, requestHash) => {
   if (job.requestHash !== requestHash) {
     throw createHttpError(
@@ -213,8 +224,38 @@ const lookupCustomers = async (queryValue, limitValue) => {
   return customers.map(serializeCustomer);
 };
 
+// SCRUM-41: return all jobs assigned to the authenticated technician.
+const listAssignedJobs = async (technicianId) => {
+  const jobs = await repairJobRepository.findAssignedToTechnician(technicianId);
+  return jobs.map(serializeJobListItem);
+};
+
+// SCRUM-41: return full details of a single job, only when it belongs to the
+// requesting technician. Access is rejected with 403 for any other assignment.
+const getAssignedJobDetail = async (jobIdentifier, technicianId) => {
+  const job = await repairJobRepository.findByIdOrReference(jobIdentifier);
+
+  if (!job) {
+    throw createHttpError('Repair job not found', 404);
+  }
+
+  // Strict ownership check — even a valid job identifier returns 403 when the
+  // job is assigned to a different technician or is currently unassigned.
+  const assigned = job.assignedTechnician
+    ? String(job.assignedTechnician._id || job.assignedTechnician)
+    : null;
+
+  if (!assigned || assigned !== String(technicianId)) {
+    throw createHttpError('You do not have permission to access this job', 403);
+  }
+
+  return serializeRepairJob(job);
+};
+
 module.exports = {
   createRepairJob,
   lookupCustomers,
-  serializeRepairJob
+  serializeRepairJob,
+  listAssignedJobs,
+  getAssignedJobDetail
 };

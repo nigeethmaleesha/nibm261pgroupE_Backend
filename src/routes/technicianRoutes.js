@@ -1,5 +1,6 @@
 const express = require('express');
 const internalAuthController = require('../controllers/internalAuthController');
+const repairJobController = require('../controllers/repairJobController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
 
@@ -21,5 +22,19 @@ router.post('/auth/forgot-password/change', loginLimiter, technicianAuth.changeF
 router.post('/auth/refresh-token', technicianAuth.refreshToken);
 router.post('/auth/logout', technicianAuth.logout);
 router.get('/auth/me', protect, authorizeRoles('technician'), technicianAuth.me);
+
+// SCRUM-41: technician views their own assigned repair jobs.
+router.get(
+  '/jobs',
+  protect,
+  authorizeRoles('technician'),
+  repairJobController.listMyJobs
+);
+router.get(
+  '/jobs/:jobIdentifier',
+  protect,
+  authorizeRoles('technician'),
+  repairJobController.getMyJob
+);
 
 module.exports = router;

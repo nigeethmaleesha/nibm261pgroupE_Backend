@@ -94,6 +94,12 @@ const repairJobSchema = new mongoose.Schema(
       default: 'Received',
       required: true
     },
+    // SCRUM-41: technician assigned to this job. Null until assignment is made.
+    assignedTechnician: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -155,6 +161,12 @@ repairJobSchema.index(
 repairJobSchema.index(
   { status: 1, receivedAt: -1 },
   { name: 'repair_job_status_received_idx' }
+);
+
+// SCRUM-41: fast lookup of all jobs assigned to a specific technician.
+repairJobSchema.index(
+  { assignedTechnician: 1, receivedAt: -1 },
+  { name: 'repair_job_assigned_technician_idx' }
 );
 
 module.exports = mongoose.model('RepairJob', repairJobSchema);
