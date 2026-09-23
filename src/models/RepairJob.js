@@ -5,6 +5,7 @@ const JOB_STATUSES = [
   'Diagnosing',
   'Awaiting Approval',
   'Approved',
+  'Estimate Rejected',
   'In Repair',
   'Waiting for Parts',
   'Ready for Collection',

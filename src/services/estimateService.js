@@ -128,9 +128,15 @@ const serializeEstimate = async (estimate, { session = null } = {}) => {
     currency: estimate.currency,
     totalMinor: estimate.totalMinor,
     total: formatMinor(estimate.totalMinor),
+    status: estimate.status || 'Issued',
     issuedBy: estimate.issuedBy,
     issuedAt: estimate.issuedAt,
     isImmutable: estimate.isImmutable,
+    decision: estimate.decision && estimate.decision.action ? {
+      action: estimate.decision.action,
+      decidedBy: estimate.decision.decidedBy,
+      decidedAt: estimate.decision.decidedAt
+    } : null,
     items: items.map(serializeItem)
   };
 };
@@ -155,13 +161,17 @@ const eligibilityFor = (job, diagnosis, existingEstimate) => {
 };
 
 const getEstimateContext = async ({ jobIdentifier, actor }) => {
-  if (!actor || actor.role !== 'owner_staff') {
-    throw createHttpError('Only Owner/Staff can prepare repair estimates', 403, 'FORBIDDEN');
+  if (!actor || !['owner_staff', 'customer'].includes(actor.role)) {
+    throw createHttpError('Only Owner/Staff or customer can access estimate details', 403, 'FORBIDDEN');
   }
 
   const job = await repairJobRepository.findByIdOrReference(jobIdentifier);
   if (!job) {
     throw createHttpError('Repair job not found', 404, 'NOT_FOUND');
+  }
+
+  if (actor.role === 'customer' && job.customer.toString() !== actor._id.toString()) {
+    throw createHttpError('You are not authorized to view this repair job estimate', 403, 'FORBIDDEN');
   }
 
   const [diagnosis, existingEstimate] = await Promise.all([
@@ -348,9 +358,227 @@ const issueInitialEstimate = async ({ jobIdentifier, payload, actor }) => {
   }
 };
 
+const recordEstimateDecision = async ({ jobIdentifier, payload = {}, actor }) => {
+  if (!actor || actor.role !== 'customer') {
+    throw createHttpError('Only customers can authorize or reject repair estimates', 403, 'FORBIDDEN');
+  }
+
+  const rawAction = String(payload.action || payload.decision || '').trim().toUpperCase();
+  let normalizedAction;
+  if (['APPROVE', 'APPROVED'].includes(rawAction)) {
+    normalizedAction = 'APPROVED';
+  } else if (['REJECT', 'REJECTED'].includes(rawAction)) {
+    normalizedAction = 'REJECTED';
+  } else {
+    throw createHttpError(
+      'action must be APPROVE or REJECT',
+      422,
+      'VALIDATION_ERROR'
+    );
+  }
+
+  const job = await repairJobRepository.findByIdOrReference(jobIdentifier);
+  if (!job) {
+    throw createHttpError('Repair job not found', 404, 'NOT_FOUND');
+  }
+
+  if (job.customer.toString() !== actor._id.toString()) {
+    throw createHttpError(
+      'You are not authorized to make an estimate decision for this repair job',
+      403,
+      'FORBIDDEN'
+    );
+  }
+
+  const currentEstimate = await estimateRepository.findInitialByJob(job._id);
+  if (!currentEstimate) {
+    throw createHttpError('No issued estimate found for this repair job', 404, 'NOT_FOUND');
+  }
+
+  // Idempotency check: If an identical decision was already recorded by the same customer on this estimate
+  if (currentEstimate.decision && currentEstimate.decision.action) {
+    const existingAction = currentEstimate.decision.action;
+    const existingUser = currentEstimate.decision.decidedBy
+      ? currentEstimate.decision.decidedBy.toString()
+      : null;
+
+    if (existingAction === normalizedAction && existingUser === actor._id.toString()) {
+      return {
+        created: false,
+        idempotentReplay: true,
+        message: 'Estimate decision has already been recorded.',
+        jobStatus: job.status,
+        estimateStatus: currentEstimate.status,
+        decision: {
+          action: currentEstimate.decision.action,
+          decidedBy: currentEstimate.decision.decidedBy,
+          decidedAt: currentEstimate.decision.decidedAt,
+          versionNumber: currentEstimate.versionNumber
+        },
+        estimate: await serializeEstimate(currentEstimate)
+      };
+    }
+
+    throw createHttpError(
+      'This estimate has already been decided or superseded. Please refresh to view current status.',
+      409,
+      'STATE_CONFLICT'
+    );
+  }
+
+  // Stale state check: Job must be in 'Awaiting Approval'
+  if (job.status !== 'Awaiting Approval') {
+    throw createHttpError(
+      `Job is no longer awaiting estimate approval (current status: ${job.status}). Please refresh.`,
+      409,
+      'STATE_CONFLICT'
+    );
+  }
+
+  // Stale version check if client passed versionNumber
+  if (payload.versionNumber !== undefined && payload.versionNumber !== null) {
+    const reqVersion = Number(payload.versionNumber);
+    if (!Number.isInteger(reqVersion) || reqVersion !== currentEstimate.versionNumber) {
+      throw createHttpError(
+        'The estimate version is stale. Please refresh and review the latest estimate.',
+        409,
+        'STATE_CONFLICT'
+      );
+    }
+  }
+
+  // Stale total check if client passed total or totalMinor
+  if (payload.total !== undefined && payload.total !== null) {
+    const reqTotalMinor = parseLkrToMinor(payload.total, 'total');
+    if (reqTotalMinor !== currentEstimate.totalMinor) {
+      throw createHttpError(
+        'The estimate total is stale. Please refresh and review the latest estimate.',
+        409,
+        'STATE_CONFLICT'
+      );
+    }
+  }
+
+  const targetJobStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Estimate Rejected';
+  const targetEstimateStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Rejected';
+  const decidedAt = new Date();
+
+  const session = await mongoose.startSession();
+  try {
+    let updatedEstimate;
+    let updatedJob;
+
+    await session.withTransaction(async () => {
+      updatedEstimate = await estimateRepository.recordDecision(
+        currentEstimate._id,
+        {
+          status: targetEstimateStatus,
+          action: normalizedAction,
+          decidedBy: actor._id,
+          decidedAt
+        },
+        session
+      );
+
+      if (!updatedEstimate) {
+        throw createHttpError(
+          'This estimate has already been decided or updated. Please refresh.',
+          409,
+          'STATE_CONFLICT'
+        );
+      }
+
+      updatedJob = await repairJobRepository.updateStatusForDecision(
+        job._id,
+        targetJobStatus,
+        job.revision || 0,
+        session
+      );
+
+      if (!updatedJob) {
+        throw createHttpError(
+          'Repair job state changed while recording your decision. Please refresh and try again.',
+          409,
+          'STATE_CONFLICT'
+        );
+      }
+    });
+
+    return {
+      created: true,
+      idempotentReplay: false,
+      message: `Estimate ${normalizedAction === 'APPROVED' ? 'approved' : 'rejected'} successfully`,
+      jobStatus: updatedJob.status,
+      estimateStatus: updatedEstimate.status,
+      decision: {
+        action: updatedEstimate.decision.action,
+        decidedBy: updatedEstimate.decision.decidedBy,
+        decidedAt: updatedEstimate.decision.decidedAt,
+        versionNumber: updatedEstimate.versionNumber
+      },
+      estimate: await serializeEstimate(updatedEstimate)
+    };
+  } catch (error) {
+    if (
+      /Transaction numbers are only allowed|replica set member|mongos/i.test(error?.message || '')
+    ) {
+      const updatedEstimate = await estimateRepository.recordDecision(
+        currentEstimate._id,
+        {
+          status: targetEstimateStatus,
+          action: normalizedAction,
+          decidedBy: actor._id,
+          decidedAt
+        }
+      );
+
+      if (!updatedEstimate) {
+        throw createHttpError(
+          'This estimate has already been decided or updated. Please refresh.',
+          409,
+          'STATE_CONFLICT'
+        );
+      }
+
+      const updatedJob = await repairJobRepository.updateStatusForDecision(
+        job._id,
+        targetJobStatus,
+        job.revision || 0
+      );
+
+      if (!updatedJob) {
+        throw createHttpError(
+          'Repair job state changed while recording your decision. Please refresh and try again.',
+          409,
+          'STATE_CONFLICT'
+        );
+      }
+
+      return {
+        created: true,
+        idempotentReplay: false,
+        message: `Estimate ${normalizedAction === 'APPROVED' ? 'approved' : 'rejected'} successfully`,
+        jobStatus: updatedJob.status,
+        estimateStatus: updatedEstimate.status,
+        decision: {
+          action: updatedEstimate.decision.action,
+          decidedBy: updatedEstimate.decision.decidedBy,
+          decidedAt: updatedEstimate.decision.decidedAt,
+          versionNumber: updatedEstimate.versionNumber
+        },
+        estimate: await serializeEstimate(updatedEstimate)
+      };
+    }
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
 module.exports = {
   getEstimateContext,
   issueInitialEstimate,
+  recordEstimateDecision,
   normalizeItems,
   serializeEstimate
 };

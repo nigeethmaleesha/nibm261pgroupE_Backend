@@ -65,6 +65,28 @@ const estimateSchema = new mongoose.Schema(
       required: true,
       immutable: true
     },
+    status: {
+      type: String,
+      enum: ['Issued', 'Approved', 'Rejected'],
+      default: 'Issued',
+      required: true
+    },
+    decision: {
+      action: {
+        type: String,
+        enum: ['APPROVED', 'REJECTED'],
+        default: null
+      },
+      decidedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+      },
+      decidedAt: {
+        type: Date,
+        default: null
+      }
+    },
     requestHash: {
       type: String,
       required: true,
