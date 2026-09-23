@@ -13,7 +13,9 @@ const errorHandler = (error, req, res, next) => {
 
   if (error.code === 11000) {
     statusCode = 409;
-    message = 'An account with this email address already exists';
+    message = error.keyPattern?.email
+      ? 'An account with this email address already exists'
+      : 'A conflicting record already exists';
   }
 
   if (error.retryAfterSeconds) {
@@ -26,6 +28,8 @@ const errorHandler = (error, req, res, next) => {
 
   return res.status(statusCode).json({
     message,
+    ...(error.codeName ? { code: error.codeName } : {}),
+    ...(error.details ? { details: error.details } : {}),
     ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {})
   });
 };

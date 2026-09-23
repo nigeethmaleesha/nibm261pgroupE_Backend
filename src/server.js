@@ -1,3 +1,5 @@
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -5,6 +7,7 @@ const helmet = require('helmet');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const staffRoutes = require('./routes/staffRoutes');
+const jobRoutes = require('./routes/jobRoutes');
 const technicianRoutes = require('./routes/technicianRoutes');
 const internalRoutes = require('./routes/internalRoutes');
 const { notFound, errorHandler } = require('./middlewares/errorMiddleware');
@@ -39,6 +42,7 @@ app.get('/api/health', (req, res) => res.status(200).json({
 
 app.use('/api/auth', authRoutes);
 app.use('/api/staff', staffRoutes);
+app.use('/api/jobs', jobRoutes);
 app.use('/api/technician', technicianRoutes);
 app.use('/api/internal', internalRoutes);
 

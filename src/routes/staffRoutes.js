@@ -2,6 +2,7 @@ const express = require('express');
 const internalAuthController = require('../controllers/internalAuthController');
 const technicianManagementController = require('../controllers/technicianManagementController');
 const repairJobController = require('../controllers/repairJobController');
+const estimateController = require('../controllers/estimateController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -41,6 +42,22 @@ router.post(
   protect,
   authorizeRoles('owner_staff'),
   repairJobController.createRepairJob
+);
+
+// SCRUM-14: Owner/Staff can inspect estimate prerequisites and issue the
+// immutable initial version. `jobIdentifier` accepts either MongoDB _id or the
+// human-readable job reference so this story is testable before SCRUM-10 UI is merged.
+router.get(
+  '/jobs/:jobIdentifier/estimate-context',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateController.getEstimateContext
+);
+router.post(
+  '/jobs/:jobIdentifier/estimates',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateController.issueInitialEstimate
 );
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.
