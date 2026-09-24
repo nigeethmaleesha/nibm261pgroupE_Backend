@@ -2450,8 +2450,224 @@
       ]
     },
     {
-      "name": "Technician - Assigned Jobs (SCRUM-41)",
-      "description": "SCRUM-41: A technician can only see and open jobs explicitly assigned to them.\n\nSetup:\n1. Log in as a technician via POST /api/technician/auth/login then verify OTP.\n2. Assign at least one RepairJob to this technician in MongoDB Atlas (set assignedTechnician to this user _id).\n3. The list test auto-saves technicianJobReference and technicianJobId from the first result.",
+      "name": "Customer - Estimate Decision Copy",
+      "item": [
+        {
+          "name": "Get Job Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Has job details', () => pm.expect(d).to.have.property('job'));",
+                  "pm.test('Has currentEstimate', () => pm.expect(d).to.have.property('currentEstimate'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate"
+              ]
+            },
+            "description": "Allows the job customer to view estimate items, version, total, and current status."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Initial Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job status is Approved', () => pm.expect(d.jobStatus).to.eql('Approved'));",
+                  "pm.test('Estimate status is Approved', () => pm.expect(d.estimateStatus).to.eql('Approved'));",
+                  "pm.test('Decision action is APPROVED', () => pm.expect(d.decision.action).to.eql('APPROVED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\",\n  \"versionNumber\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Customer confirms approval of the initial estimate. Changes job status to Approved and estimate status to Approved."
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Approval (Idempotent Test)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Idempotent replay is true', () => pm.expect(d.idempotentReplay).to.eql(true));",
+                  "pm.test('Job status remains Approved', () => pm.expect(d.jobStatus).to.eql('Approved'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Retrying the exact same decision request returns the saved result without duplicate database events."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Initial Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job status is Estimate Rejected', () => pm.expect(d.jobStatus).to.eql('Estimate Rejected'));",
+                  "pm.test('Estimate status is Rejected', () => pm.expect(d.estimateStatus).to.eql('Rejected'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"REJECT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Customer confirms rejection of the estimate. Changes job status to Estimate Rejected and estimate status to Rejected."
+          },
+          "response": []
+        },
+        {
+          "name": "Stale Decision - Expect 409 Conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Message prompts refresh', () => pm.expect(d.message).to.include('refresh'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"REJECT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Submitting a conflicting decision on an estimate that was already decided or superseded returns 409 State Conflict."
+          },
+          "response": []
+        }
+      ],
+      "description": "Customer estimate approval and rejection requests, including idempotency replays and stale state checks."
+    },
+    {
+      "name": "Technician - Assigned Jobs (SCRUM-41) Copy",
       "item": [
         {
           "name": "[SCRUM-41] List My Assigned Jobs",
@@ -2690,7 +2906,182 @@
           },
           "response": []
         }
-      ]
+      ],
+      "description": "SCRUM-41: A technician can only see and open jobs explicitly assigned to them.\n\nSetup:\n1. Log in as a technician via POST /api/technician/auth/login then verify OTP.\n2. Assign at least one RepairJob to this technician in MongoDB Atlas (set assignedTechnician to this user _id).\n3. The list test auto-saves technicianJobReference and technicianJobId from the first result."
+    },
+    {
+      "name": "Customer - Current Estimate View (SCRUM-15) Copy",
+      "item": [
+        {
+          "name": "Get Current Estimate - Issued Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst d = pm.response.json();\npm.test('Job belongs to the permitted customer view', () => pm.expect(d.job).to.be.an('object'));\npm.test('Issued estimate is present', () => { pm.expect(d.hasEstimate).to.eql(true); pm.expect(d.estimate).to.be.an('object'); });\npm.test('Required estimate fields are returned', () => { pm.expect(d.estimate.versionNumber).to.be.a('number'); pm.expect(d.estimate.items).to.be.an('array'); pm.expect(d.estimate.total).to.be.a('string'); pm.expect(d.estimate.issuedAt).to.be.a('string'); pm.expect(d.estimate.decisionState).to.be.a('string'); });\npm.test('Customer response contains no diagnosis/internal notes', () => { const body = JSON.stringify(d).toLowerCase(); pm.expect(body).to.not.include('diagnosis'); pm.expect(body).to.not.include('internalnote'); pm.expect(body).to.not.include('internal_note'); pm.expect(d.estimate).to.not.have.property('issuedBy'); });\npm.test('Decision control flag matches waiting state', () => { if (d.estimate.canDecide) pm.expect(d.estimate.decisionState).to.eql('AWAITING_APPROVAL'); });",
+                  "pm.test('Staff/private identifiers are scrubbed', () => { const body = JSON.stringify(d); ['issuedBy','createdBy','decidedBy','customerSnapshot','assignedTechnician','reportedFault'].forEach((field) => pm.expect(body).to.not.include('\\\"' + field + '\\\"')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{repairJobReference}}/current-estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{repairJobReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Customer-only endpoint for the latest issued estimate. Expected: 200. The DTO is intentionally scrubbed of diagnosis/internal staff data."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current Estimate - Waiting Message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst d = pm.response.json();\npm.test('No estimate is returned', () => { pm.expect(d.hasEstimate).to.eql(false); pm.expect(d.estimate).to.eql(null); });\npm.test('Informative waiting message is returned', () => pm.expect(d.message).to.be.a('string').and.not.empty);\npm.test('No diagnosis/internal notes are exposed', () => pm.expect(JSON.stringify(d).toLowerCase()).to.not.include('diagnosis'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{customerJobWithoutEstimateReference}}/current-estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{customerJobWithoutEstimateReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Set customerJobWithoutEstimateReference to a repair job owned by the logged-in customer that has no estimate. Expected: 200 with hasEstimate=false and an informative message."
+          },
+          "response": []
+        },
+        {
+          "name": "Another Customer Job - Must Not Leak",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));\nconst d = pm.response.json();\npm.test('Generic not-found response only', () => pm.expect(d.message).to.eql('Repair job not found'));\npm.test('No estimate/job details leak', () => { pm.expect(d).to.not.have.property('estimate'); pm.expect(d).to.not.have.property('job'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{otherCustomerJobReference}}/current-estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{otherCustomerJobReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Set otherCustomerJobReference to a job owned by a different customer. Expected: 404 so the API does not disclose whether another customer record exists."
+          },
+          "response": []
+        },
+        {
+          "name": "No Customer Session - Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));\nconst d = pm.response.json();\npm.test('Authentication is required', () => pm.expect(d.message).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{noCookieBaseUrl}}/api/customer/jobs/{{repairJobReference}}/current-estimate",
+              "host": [
+                "{{noCookieBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{repairJobReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Uses 127.0.0.1 via noCookieBaseUrl so localhost auth cookies are not sent. Expected: 401."
+          },
+          "response": []
+        },
+        {
+          "name": "Legacy Staff Estimate Context - Customer Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const d = pm.response.json();",
+                  "pm.test('Staff-only context is blocked for customer', () => pm.expect(d.message).to.be.a('string'));",
+                  "pm.test('No staff/diagnosis payload is returned', () => { const body = JSON.stringify(d).toLowerCase(); pm.expect(body).to.not.include('diagnosis'); pm.expect(d).to.not.have.property('estimate'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate"
+              ]
+            },
+            "description": "SCRUM-15 hardening check. The old estimate-context endpoint is staff-only because it can include diagnosis context. With a customer session this must return 403; customers use /api/customer/jobs/:id/current-estimate instead."
+          },
+          "response": []
+        }
+      ],
+      "description": "SCRUM-15 verification for the customer current-estimate view. Prerequisites: 1) the customer is logged in on {{baseUrl}} and has completed login OTP verification, 2) {{repairJobReference}} belongs to that same customer and has an issued estimate, 3) for the waiting-state test, set {{customerJobWithoutEstimateReference}} to a job owned by the same customer with no issued estimate, 4) for the ownership test, set {{otherCustomerJobReference}} to a job owned by a different customer. The endpoint must never return diagnosis/internal-note data."
     }
   ],
   "variable": [
@@ -2772,14 +3163,6 @@
     },
     {
       "key": "repairJobReference",
-      "value": ""
-    },
-    {
-      "key": "technicianJobReference",
-      "value": ""
-    },
-    {
-      "key": "technicianJobId",
       "value": ""
     }
   ]
