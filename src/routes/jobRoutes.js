@@ -24,11 +24,13 @@ router.post(
   estimateController.recordEstimateDecision
 );
 
-// Customer estimate context endpoint.
+// Legacy staff estimate-context alias. SCRUM-15 customers must use
+// /api/customer/jobs/:jobIdentifier/current-estimate so diagnosis/internal
+// context can never be exposed through the customer API surface.
 router.get(
   '/:jobIdentifier/estimate',
   protect,
-  authorizeRoles('customer', 'owner_staff'),
+  authorizeRoles('owner_staff'),
   estimateController.getEstimateContext
 );
 
