@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const repairJobRepository = require('../repositories/repairJobRepository');
 const userRepository = require('../repositories/userRepository');
+const repairJobAssignmentAuditRepository = require('../repositories/repairJobAssignmentAuditRepository');
 const { generateJobReference } = require('../utils/jobReference');
 
 const MAX_REFERENCE_ATTEMPTS = 8;
@@ -224,6 +225,223 @@ const lookupCustomers = async (queryValue, limitValue) => {
   return customers.map(serializeCustomer);
 };
 
+
+const serializeInternalUser = (user) => {
+  if (!user) return null;
+  return {
+    id: user._id || user.id,
+    fullName: user.fullName,
+    email: user.email,
+    contactNumber: user.contactNumber || null,
+    role: user.role,
+    isActive: user.isActive,
+    isEmailVerified: user.isEmailVerified
+  };
+};
+
+const serializeStaffJobListItem = (job) => ({
+  id: job._id,
+  reference: job.reference,
+  customer: {
+    id: job.customer,
+    fullName: job.customerSnapshot.fullName,
+    email: job.customerSnapshot.email,
+    contactNumber: job.customerSnapshot.contactNumber
+  },
+  deviceType: job.deviceType,
+  makeModel: job.makeModel,
+  serialNumber: job.serialNumber || null,
+  reportedFault: job.reportedFault,
+  receivedAt: job.receivedAt,
+  status: job.status,
+  assignedTechnician: serializeInternalUser(job.assignedTechnician),
+  assignedAt: job.assignedAt || null,
+  revision: job.revision || 0,
+  updatedAt: job.updatedAt
+});
+
+const serializeStaffJobDetail = (job) => ({
+  ...serializeStaffJobListItem(job),
+  createdAt: job.createdAt,
+  assignment: {
+    technician: serializeInternalUser(job.assignedTechnician),
+    assignedBy: serializeInternalUser(job.assignedBy),
+    assignedAt: job.assignedAt || null
+  },
+  currentEstimate: job.currentEstimate && job.currentEstimate._id
+    ? {
+        id: job.currentEstimate._id,
+        versionNumber: job.currentEstimate.versionNumber,
+        currency: job.currentEstimate.currency,
+        totalMinor: job.currentEstimate.totalMinor,
+        status: job.currentEstimate.status,
+        issuedAt: job.currentEstimate.issuedAt,
+        decision: job.currentEstimate.decision?.action
+          ? {
+              action: job.currentEstimate.decision.action,
+              decidedBy: job.currentEstimate.decision.decidedBy || null,
+              decidedAt: job.currentEstimate.decision.decidedAt || null
+            }
+          : null
+      }
+    : null
+});
+
+const normalizeStaffSearchLimit = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.min(Math.max(parsed, 1), 100);
+};
+
+// SCRUM-10: shop-wide search is intentionally Owner/Staff-only.
+const searchStaffRepairJobs = async ({ queryValue, limitValue, actor }) => {
+  if (!actor || actor.role !== 'owner_staff') {
+    throw createHttpError('Only Owner/Staff can search all repair jobs', 403);
+  }
+
+  const query = String(queryValue || '').trim();
+  if (query.length > 120) {
+    throw createHttpError('Repair job search query must not exceed 120 characters', 400);
+  }
+
+  const jobs = await repairJobRepository.searchForStaff(
+    query,
+    normalizeStaffSearchLimit(limitValue)
+  );
+
+  return jobs.map(serializeStaffJobListItem);
+};
+
+// SCRUM-10: selected result detail keeps the original intake snapshot together
+// with assignment and current repair/estimate state.
+const getStaffRepairJobDetail = async ({ jobIdentifier, actor }) => {
+  if (!actor || actor.role !== 'owner_staff') {
+    throw createHttpError('Only Owner/Staff can view shop-wide repair job details', 403);
+  }
+
+  const job = await repairJobRepository.findForStaffDetail(jobIdentifier);
+  if (!job) {
+    throw createHttpError('Repair job not found', 404);
+  }
+
+  return serializeStaffJobDetail(job);
+};
+
+const normalizeTechnicianId = (value) => {
+  const technicianId = String(value || '').trim();
+
+  if (!technicianId) {
+    throw createHttpError('technicianId is required', 400);
+  }
+
+  if (!mongoose.isValidObjectId(technicianId)) {
+    throw createHttpError('technicianId must be a valid MongoDB ObjectId', 400);
+  }
+
+  return technicianId;
+};
+
+// SCRUM-11: assign/reassign an open repair job to an active, verified
+// technician. The assignment and immutable audit row are committed together.
+const assignRepairJob = async ({ jobIdentifier, payload = {}, actor }) => {
+  if (!actor || actor.role !== 'owner_staff') {
+    throw createHttpError('Only Owner/Staff can assign repair jobs', 403);
+  }
+
+  const technicianId = normalizeTechnicianId(payload.technicianId);
+  const session = await mongoose.startSession();
+  let changed = false;
+
+  try {
+    await session.withTransaction(async () => {
+      const job = await repairJobRepository.findByIdOrReference(jobIdentifier, { session });
+      if (!job) {
+        throw createHttpError('Repair job not found', 404);
+      }
+
+      if (job.status === 'Collected') {
+        throw createHttpError(
+          'Collected repair jobs cannot be assigned or reassigned',
+          409
+        );
+      }
+
+      const technician = await userRepository.findActiveVerifiedTechnicianById(
+        technicianId,
+        { session }
+      );
+
+      if (!technician) {
+        throw createHttpError(
+          'Active verified technician account not found',
+          404
+        );
+      }
+
+      const previousTechnicianId = job.assignedTechnician
+        ? String(job.assignedTechnician)
+        : null;
+
+      if (previousTechnicianId === String(technician._id)) {
+        changed = false;
+        return;
+      }
+
+      const assignedAt = new Date();
+      const updatedJob = await repairJobRepository.assignTechnician(
+        job._id,
+        technician._id,
+        actor._id,
+        assignedAt,
+        job.revision || 0,
+        session
+      );
+
+      if (!updatedJob) {
+        throw createHttpError(
+          'Repair job changed while the assignment was being saved. Refresh and try again.',
+          409
+        );
+      }
+
+      await repairJobAssignmentAuditRepository.create({
+        job: job._id,
+        action: previousTechnicianId ? 'REASSIGNED' : 'ASSIGNED',
+        previousTechnician: previousTechnicianId,
+        assignedTechnician: technician._id,
+        assignedBy: actor._id,
+        assignedAt,
+        jobStatus: job.status
+      }, session);
+
+      changed = true;
+    });
+  } catch (error) {
+    if (
+      /Transaction numbers are only allowed|replica set member|mongos/i.test(
+        error?.message || ''
+      )
+    ) {
+      throw createHttpError(
+        'Technician assignment audit logging requires MongoDB transaction support. Use MongoDB Atlas or a replica-set deployment.',
+        503
+      );
+    }
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+
+  const job = await getStaffRepairJobDetail({ jobIdentifier, actor });
+  return {
+    changed,
+    message: changed
+      ? 'Technician assigned successfully'
+      : 'This technician is already assigned to the repair job',
+    job
+  };
+};
+
 // SCRUM-41: return all jobs assigned to the authenticated technician.
 const listAssignedJobs = async (technicianId) => {
   const jobs = await repairJobRepository.findAssignedToTechnician(technicianId);
@@ -256,6 +474,9 @@ module.exports = {
   createRepairJob,
   lookupCustomers,
   serializeRepairJob,
+  searchStaffRepairJobs,
+  getStaffRepairJobDetail,
+  assignRepairJob,
   listAssignedJobs,
   getAssignedJobDetail
 };

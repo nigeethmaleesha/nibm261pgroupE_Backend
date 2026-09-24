@@ -44,6 +44,28 @@ router.post(
   repairJobController.createRepairJob
 );
 
+// SCRUM-10: Owner/Staff-only shop-wide repair-job search and selected detail.
+router.get(
+  '/jobs',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.searchStaffJobs
+);
+router.get(
+  '/jobs/:jobIdentifier',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.getStaffJob
+);
+
+// SCRUM-11: staff-route alias used by the admin frontend.
+router.patch(
+  '/jobs/:jobIdentifier/assign',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.assignTechnician
+);
+
 // SCRUM-14: Owner/Staff can inspect estimate prerequisites and issue the
 // immutable initial version. `jobIdentifier` accepts either MongoDB _id or the
 // human-readable job reference so this story is testable before SCRUM-10 UI is merged.
