@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const RepairJob = require('../models/RepairJob');
 
 const create = (data) => RepairJob.create(data);
@@ -10,7 +11,7 @@ const findByIdempotency = (createdBy, idempotencyKey) => RepairJob.findOne({
 
 const findByIdOrReference = (identifier, { session = null } = {}) => {
   const value = String(identifier || '').trim();
-  const filter = require('mongoose').isValidObjectId(value)
+  const filter = mongoose.isValidObjectId(value)
     ? { _id: value }
     : { reference: value.toUpperCase() };
 
@@ -49,10 +50,18 @@ const attachInitialEstimate = (
   { new: true, session }
 );
 
+// SCRUM-41: return all jobs assigned to a specific technician, newest first.
+// Only expose the fields needed for the technician list view.
+const findAssignedToTechnician = (technicianId) =>
+  RepairJob.find({ assignedTechnician: technicianId })
+    .select('reference deviceType makeModel reportedFault status receivedAt assignedTechnician')
+    .sort({ receivedAt: -1 });
+
 module.exports = {
   create,
   findByIdempotency,
   findByIdOrReference,
   findByIdForEstimate,
-  attachInitialEstimate
+  attachInitialEstimate,
+  findAssignedToTechnician
 };
