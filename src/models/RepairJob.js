@@ -5,6 +5,7 @@ const JOB_STATUSES = [
   'Diagnosing',
   'Awaiting Approval',
   'Approved',
+  'Estimate Rejected',
   'In Repair',
   'Waiting for Parts',
   'Ready for Collection',
@@ -94,11 +95,30 @@ const repairJobSchema = new mongoose.Schema(
       default: 'Received',
       required: true
     },
+    // SCRUM-41: technician assigned to this job. Null until assignment is made.
+    assignedTechnician: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
       immutable: true
+    },
+    // SCRUM-14: points at the latest issued estimate. Keeping this on the job
+    // makes future current-estimate/history stories deterministic.
+    currentEstimate: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null
+    },
+    // Optimistic revision used when workflow commands change the job state.
+    revision: {
+      type: Number,
+      default: 0,
+      min: 0
     },
     idempotencyKey: {
       type: String,
@@ -142,6 +162,12 @@ repairJobSchema.index(
 repairJobSchema.index(
   { status: 1, receivedAt: -1 },
   { name: 'repair_job_status_received_idx' }
+);
+
+// SCRUM-41: fast lookup of all jobs assigned to a specific technician.
+repairJobSchema.index(
+  { assignedTechnician: 1, receivedAt: -1 },
+  { name: 'repair_job_assigned_technician_idx' }
 );
 
 module.exports = mongoose.model('RepairJob', repairJobSchema);

@@ -2330,6 +2330,367 @@
         }
       ],
       "description": "Backend-first QA for Jira SCRUM-9. Prerequisites: customer registration + email verification completed; Owner/Staff login + OTP verification completed so the normal baseUrl host has valid Owner/Staff HttpOnly cookies."
+    },
+    {
+      "name": "Estimate Creation and Issue",
+      "item": [
+        {
+          "name": "Get Estimate Context",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\nconst d=pm.response.json(); pm.test('Eligibility object returned',()=>pm.expect(d.eligibility).to.be.an('object'));\nconsole.log('Estimate eligibility:', d.eligibility);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobId}}/estimate-context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobId}}",
+                "estimate-context"
+              ]
+            },
+            "description": "Returns job, completed diagnosis when available, eligibility reasons and any already-issued version 1."
+          },
+          "response": []
+        },
+        {
+          "name": "Issue Valid Initial Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201',()=>pm.response.to.have.status(201));\nconst d=pm.response.json();\npm.test('Version 1',()=>pm.expect(d.estimate.versionNumber).to.eql(1));\npm.test('LKR total is exact',()=>{pm.expect(d.estimate.currency).to.eql('LKR'); pm.expect(d.estimate.total).to.eql('7000.00'); pm.expect(d.estimate.totalMinor).to.eql(700000);});\npm.test('Job awaits approval',()=>pm.expect(d.jobStatus).to.eql('Awaiting Approval'));\npm.test('Issued estimate immutable',()=>pm.expect(d.estimate.isImmutable).to.eql(true));\npm.collectionVariables.set('estimateId', d.estimate.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"type\": \"PART\",\n      \"description\": \"Charging port assembly\",\n      \"quantity\": 1,\n      \"unitPrice\": \"4500.00\"\n    },\n    {\n      \"type\": \"LABOUR\",\n      \"description\": \"Charging port replacement labour\",\n      \"quantity\": 1,\n      \"unitPrice\": \"2500.00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{estimateJobIdentifier}}/estimates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{estimateJobIdentifier}}",
+                "estimates"
+              ]
+            },
+            "description": "Success prerequisite: job status Diagnosing + completed diagnosis + no previously issued estimate."
+          },
+          "response": []
+        },
+        {
+          "name": "Context After Issue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200',()=>pm.response.to.have.status(200));\nconst d=pm.response.json(); pm.test('Current immutable estimate returned',()=>{pm.expect(d.currentEstimate.versionNumber).to.eql(1); pm.expect(d.currentEstimate.isImmutable).to.eql(true);}); pm.test('No longer eligible for another v1',()=>pm.expect(d.eligibility.eligible).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{estimateJobIdentifier}}/estimate-context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{estimateJobIdentifier}}",
+                "estimate-context"
+              ]
+            },
+            "description": "Confirms persisted version 1 and Awaiting Approval workflow state."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Technician - Assigned Jobs (SCRUM-41)",
+      "description": "SCRUM-41: A technician can only see and open jobs explicitly assigned to them.\n\nSetup:\n1. Log in as a technician via POST /api/technician/auth/login then verify OTP.\n2. Assign at least one RepairJob to this technician in MongoDB Atlas (set assignedTechnician to this user _id).\n3. The list test auto-saves technicianJobReference and technicianJobId from the first result.",
+      "item": [
+        {
+          "name": "[SCRUM-41] List My Assigned Jobs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Response has count field', () => pm.expect(d).to.have.property('count'));",
+                  "pm.test('Response has jobs array', () => pm.expect(d.jobs).to.be.an('array'));",
+                  "pm.test('count matches jobs length', () => pm.expect(d.count).to.eql(d.jobs.length));",
+                  "if (d.jobs.length > 0) {",
+                  "  const job = d.jobs[0];",
+                  "  pm.test('job has reference', () => pm.expect(job).to.have.property('reference'));",
+                  "  pm.test('job has deviceType', () => pm.expect(job).to.have.property('deviceType'));",
+                  "  pm.test('job has makeModel', () => pm.expect(job).to.have.property('makeModel'));",
+                  "  pm.test('job has reportedFault', () => pm.expect(job).to.have.property('reportedFault'));",
+                  "  pm.test('job has status', () => pm.expect(job).to.have.property('status'));",
+                  "  pm.test('job has receivedAt', () => pm.expect(job).to.have.property('receivedAt'));",
+                  "  pm.test('customerSnapshot NOT in list', () => pm.expect(job).to.not.have.property('customerSnapshot'));",
+                  "  pm.collectionVariables.set('technicianJobReference', job.reference);",
+                  "  pm.collectionVariables.set('technicianJobId', job.id);",
+                  "  console.log('Saved technicianJobReference:', job.reference, '| technicianJobId:', job.id);",
+                  "} else {",
+                  "  pm.test('Empty state: count is 0', () => pm.expect(d.count).to.eql(0));",
+                  "  console.log('No jobs assigned yet. Set assignedTechnician in MongoDB Atlas.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "jobs"
+              ]
+            },
+            "description": "Returns 200 with all jobs assigned to the logged-in technician, sorted newest-first. Returns count:0 and empty jobs array when none assigned (informative empty state). Requires technician session cookie."
+          },
+          "response": []
+        },
+        {
+          "name": "[SCRUM-41] Get My Job by Reference",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Response has job object', () => pm.expect(d).to.have.property('job'));",
+                  "const job = d.job;",
+                  "pm.test('reference matches', () => pm.expect(job.reference).to.eql(pm.collectionVariables.get('technicianJobReference')));",
+                  "pm.test('Full detail has serialNumber', () => pm.expect(job).to.have.property('serialNumber'));",
+                  "pm.test('Full detail has customer info', () => pm.expect(job).to.have.property('customer'));",
+                  "pm.test('Full detail has status', () => pm.expect(job).to.have.property('status'));",
+                  "pm.test('Full detail has deviceType', () => pm.expect(job).to.have.property('deviceType'));",
+                  "pm.test('idempotencyKey NOT exposed', () => pm.expect(job).to.not.have.property('idempotencyKey'));",
+                  "pm.test('requestHash NOT exposed', () => pm.expect(job).to.not.have.property('requestHash'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/jobs/{{technicianJobReference}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "jobs",
+                "{{technicianJobReference}}"
+              ]
+            },
+            "description": "Full detail view using human-readable reference (e.g. RF-20260923-ABCD). Run after List My Assigned Jobs which auto-saves the variable, or set technicianJobReference manually."
+          },
+          "response": []
+        },
+        {
+          "name": "[SCRUM-41] Get My Job by MongoDB ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Response has job object', () => pm.expect(d).to.have.property('job'));",
+                  "pm.test('job id matches', () => pm.expect(d.job.id).to.eql(pm.collectionVariables.get('technicianJobId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/jobs/{{technicianJobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "jobs",
+                "{{technicianJobId}}"
+              ]
+            },
+            "description": "Same detail endpoint but using MongoDB _id. Both human reference and ObjectId are accepted by the route."
+          },
+          "response": []
+        },
+        {
+          "name": "[SCRUM-41] Get Job Assigned to Another Technician - Expect 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const d = pm.response.json();",
+                  "pm.test('Error message returned', () => pm.expect(d).to.have.property('message'));",
+                  "pm.test('No job details leaked', () => pm.expect(d).to.not.have.property('job'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/jobs/{{repairJobReference}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "jobs",
+                "{{repairJobReference}}"
+              ]
+            },
+            "description": "Uses repairJobReference (a job created via the Repair Job Registration flow - NOT assigned to this technician). Expects 403. Verifies that no job details are leaked in the error body."
+          },
+          "response": []
+        },
+        {
+          "name": "[SCRUM-41] Unauthenticated List - Expect 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "const d = pm.response.json();",
+                  "pm.test('Authentication required message', () => pm.expect(d.message).to.include('Authentication'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "",
+                "description": "Intentionally empty - no session"
+              }
+            ],
+            "url": {
+              "raw": "{{noCookieBaseUrl}}/api/technician/jobs",
+              "host": [
+                "{{noCookieBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "jobs"
+              ]
+            },
+            "description": "No cookie sent. Uses 127.0.0.1 (noCookieBaseUrl) so Postman does not auto-attach the localhost cookie jar. Expects 401 Authentication required."
+          },
+          "response": []
+        },
+        {
+          "name": "[SCRUM-41] Customer Token on Technician Route - Expect 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Permission denied', () => pm.expect(pm.response.json().message).to.include('permission'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/technician/jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "technician",
+                "jobs"
+              ]
+            },
+            "description": "Send while logged in as a Customer (cookie from customer login flow). Expects 403 - RBAC blocks non-technician roles from the technician job list."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -2411,6 +2772,14 @@
     },
     {
       "key": "repairJobReference",
+      "value": ""
+    },
+    {
+      "key": "technicianJobReference",
+      "value": ""
+    },
+    {
+      "key": "technicianJobId",
       "value": ""
     }
   ]
