@@ -100,6 +100,19 @@ const repairJobSchema = new mongoose.Schema(
       required: true,
       immutable: true
     },
+    // SCRUM-14: points at the latest issued estimate. Keeping this on the job
+    // makes future current-estimate/history stories deterministic.
+    currentEstimate: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null
+    },
+    // Optimistic revision used when workflow commands change the job state.
+    revision: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     idempotencyKey: {
       type: String,
       required: true,
