@@ -5,6 +5,7 @@ const JOB_STATUSES = [
   'Diagnosing',
   'Awaiting Approval',
   'Approved',
+  'Estimate Rejected',
   'In Repair',
   'Waiting for Parts',
   'Ready for Collection',
@@ -100,6 +101,16 @@ const repairJobSchema = new mongoose.Schema(
       ref: 'User',
       default: null
     },
+    // SCRUM-11: records which Owner/Staff member made the latest assignment.
+    assignedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    assignedAt: {
+      type: Date,
+      default: null
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -161,6 +172,17 @@ repairJobSchema.index(
 repairJobSchema.index(
   { status: 1, receivedAt: -1 },
   { name: 'repair_job_status_received_idx' }
+);
+
+// SCRUM-10: searchable staff job list. Reference already has a unique index;
+// these two indexes support the customer-name / contact-number search fields.
+repairJobSchema.index(
+  { 'customerSnapshot.fullName': 1 },
+  { name: 'repair_job_customer_name_search_idx' }
+);
+repairJobSchema.index(
+  { 'customerSnapshot.contactNumber': 1 },
+  { name: 'repair_job_customer_phone_search_idx' }
 );
 
 // SCRUM-41: fast lookup of all jobs assigned to a specific technician.

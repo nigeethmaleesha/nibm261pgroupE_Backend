@@ -94,6 +94,19 @@ const searchRegisteredCustomers = (query, limit = 10) => {
     .limit(limit);
 };
 
+
+const findActiveVerifiedTechnicianById = (id, { session = null } = {}) => {
+  let query = User.findOne({
+    _id: id,
+    role: 'technician',
+    isActive: true,
+    isEmailVerified: true
+  });
+
+  if (session) query = query.session(session);
+  return query;
+};
+
 const listTechnicians = (status = 'active') => {
   const filter = {
     role: 'technician',
@@ -113,6 +126,7 @@ module.exports = {
   createPendingCustomer,
   createPendingInternalUser,
   listTechnicians,
+  findActiveVerifiedTechnicianById,
   findRegisteredCustomerById,
   searchRegisteredCustomers,
   save

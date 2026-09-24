@@ -1,5 +1,6 @@
 const express = require('express');
 const estimateController = require('../controllers/estimateController');
+const repairJobController = require('../controllers/repairJobController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -14,6 +15,31 @@ router.post(
   protect,
   authorizeRoles('owner_staff'),
   estimateController.issueInitialEstimate
+);
+
+// SCRUM-11 Jira endpoint: Owner/Staff assigns or reassigns a technician.
+// This aliases the staff route while preserving the exact Jira path.
+router.patch(
+  '/:jobIdentifier/assign',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.assignTechnician
+);
+
+// Customer estimate decision endpoint (approve / reject).
+router.post(
+  '/:jobIdentifier/estimate-decision',
+  protect,
+  authorizeRoles('customer'),
+  estimateController.recordEstimateDecision
+);
+
+// Customer estimate context endpoint.
+router.get(
+  '/:jobIdentifier/estimate',
+  protect,
+  authorizeRoles('customer', 'owner_staff'),
+  estimateController.getEstimateContext
 );
 
 module.exports = router;
