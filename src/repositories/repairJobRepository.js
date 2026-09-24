@@ -57,11 +57,37 @@ const findAssignedToTechnician = (technicianId) =>
     .select('reference deviceType makeModel reportedFault status receivedAt assignedTechnician')
     .sort({ receivedAt: -1 });
 
+const updateStatusForDecision = (
+  jobId,
+  targetStatus,
+  expectedRevision,
+  session = null
+) => {
+  const filter = {
+    _id: jobId,
+    status: 'Awaiting Approval'
+  };
+
+  if (typeof expectedRevision === 'number') {
+    filter.revision = expectedRevision;
+  }
+
+  return RepairJob.findOneAndUpdate(
+    filter,
+    {
+      $set: { status: targetStatus },
+      $inc: { revision: 1 }
+    },
+    { returnDocument: 'after', session }
+  );
+};
+
 module.exports = {
   create,
   findByIdempotency,
   findByIdOrReference,
   findByIdForEstimate,
   attachInitialEstimate,
-  findAssignedToTechnician
+  findAssignedToTechnician,
+  updateStatusForDecision
 };

@@ -30,10 +30,36 @@ const createItems = (items, session) => EstimateItem.insertMany(items, {
   ordered: true
 });
 
+const recordDecision = (
+  estimateId,
+  { status, action, decidedBy, decidedAt },
+  session = null
+) => {
+  let query = Estimate.findOneAndUpdate(
+    {
+      _id: estimateId,
+      'decision.action': null
+    },
+    {
+      $set: {
+        status,
+        'decision.action': action,
+        'decision.decidedBy': decidedBy,
+        'decision.decidedAt': decidedAt
+      }
+    },
+    { returnDocument: 'after' }
+  );
+
+  if (session) query = query.session(session);
+  return query;
+};
+
 module.exports = {
   findInitialByJob,
   findById,
   listItems,
   createEstimate,
-  createItems
+  createItems,
+  recordDecision
 };

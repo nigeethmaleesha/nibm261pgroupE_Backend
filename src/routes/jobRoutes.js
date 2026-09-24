@@ -16,4 +16,20 @@ router.post(
   estimateController.issueInitialEstimate
 );
 
+// Customer estimate decision endpoint (approve / reject).
+router.post(
+  '/:jobIdentifier/estimate-decision',
+  protect,
+  authorizeRoles('customer'),
+  estimateController.recordEstimateDecision
+);
+
+// Customer estimate context endpoint.
+router.get(
+  '/:jobIdentifier/estimate',
+  protect,
+  authorizeRoles('customer', 'owner_staff'),
+  estimateController.getEstimateContext
+);
+
 module.exports = router;
