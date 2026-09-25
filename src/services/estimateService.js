@@ -214,7 +214,7 @@ const getEstimateContext = async ({ jobIdentifier, actor }) => {
     eligibility,
     revisionEligibility: revisionEligibilityFor(job, latestEstimate),
     hasRevisionDraft: Boolean(revisionDraft),
-    workAuthorisation: getWorkAuthorisation(job, latestEstimate),
+    workAuthorisation: await getWorkAuthorisation(job, latestEstimate),
     currentEstimate
   };
 };
@@ -493,7 +493,10 @@ const recordEstimateDecision = async ({ jobIdentifier, payload = {}, actor }) =>
     }
   }
 
-  const targetJobStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Estimate Rejected';
+  const previouslyApproved = await estimateRepository.findLatestApprovedByJob(job._id);
+  const targetJobStatus = normalizedAction === 'APPROVED'
+    ? 'Approved'
+    : (previouslyApproved ? 'Approved' : 'Estimate Rejected');
   const targetEstimateStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Rejected';
   const decidedAt = new Date();
 

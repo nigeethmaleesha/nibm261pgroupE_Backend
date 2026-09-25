@@ -4,8 +4,9 @@ const { REVISION_BLOCKED_STATUSES } = require('../models/RepairJob');
 
 /*
  * Estimate revision workflow rules shared by the staff estimate APIs and any
- * later repair-progress/completion story. Repair work is only authorised by the
- * latest issued estimate version, and only once the customer has approved it.
+ * later repair-progress/completion story. Repair work is authorised if any issued
+ * estimate version has been approved by the customer. If a revision is rejected,
+ * repair work proceeds under the previously approved estimate version scope.
  */
 
 const createHttpError = (message, statusCode, code, details) => {
@@ -32,12 +33,16 @@ const revisionEligibilityFor = (job, currentEstimate) => {
   };
 };
 
-const getWorkAuthorisation = (job, currentEstimate) => {
+const getWorkAuthorisation = async (job, currentEstimate) => {
   const repairReasons = [];
 
-  if (!currentEstimate) {
+  const approvedEstimate = (currentEstimate?.status === 'Approved' || currentEstimate?.decision?.action === 'APPROVED')
+    ? currentEstimate
+    : await estimateRepository.findLatestApprovedByJob(job._id);
+
+  if (!currentEstimate && !approvedEstimate) {
     repairReasons.push('No estimate has been issued for this repair job');
-  } else if (currentEstimate.status !== 'Approved') {
+  } else if (!approvedEstimate) {
     repairReasons.push(
       `Estimate version ${currentEstimate.versionNumber} must be approved by the customer before repair work can continue (current: ${currentEstimate.status})`
     );
@@ -54,9 +59,7 @@ const getWorkAuthorisation = (job, currentEstimate) => {
 
   return {
     latestVersionNumber: currentEstimate ? currentEstimate.versionNumber : null,
-    approvedVersionNumber: currentEstimate?.status === 'Approved'
-      ? currentEstimate.versionNumber
-      : null,
+    approvedVersionNumber: approvedEstimate ? approvedEstimate.versionNumber : null,
     partsHoldActive,
     canContinueRepair: repairReasons.length === 0,
     canComplete: completionReasons.length === 0,
@@ -69,7 +72,7 @@ const getWorkAuthorisation = (job, currentEstimate) => {
 // action: 'REPAIR' (start/continue repair work) or 'COMPLETE' (finish repair).
 const assertRepairWorkAllowed = async (job, action = 'REPAIR') => {
   const currentEstimate = await estimateRepository.findCurrentByJob(job);
-  const authorisation = getWorkAuthorisation(job, currentEstimate);
+  const authorisation = await getWorkAuthorisation(job, currentEstimate);
   const reasons = action === 'COMPLETE'
     ? authorisation.completionBlockedReasons
     : authorisation.repairBlockedReasons;

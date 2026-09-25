@@ -24,6 +24,12 @@ router.get(
   authorizeRoles('owner_staff'),
   estimateRevisionController.getEstimateHistory
 );
+router.get(
+  '/:jobIdentifier/estimates/history',
+  protect,
+  authorizeRoles('customer', 'owner_staff'),
+  estimateRevisionController.getEstimateHistory
+);
 router.post(
   '/:jobIdentifier/estimate-revisions',
   protect,

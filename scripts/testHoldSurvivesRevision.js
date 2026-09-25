@@ -92,13 +92,13 @@ const run = async () => {
     console.log(`   Job status: "${job.status}", Parts hold active: ${job.partsHold?.active}`);
 
     // Step 3: Issue a revised estimate version
-    console.log('2. Issuing revised estimate version...');
+    const testPrice = (12000 + Math.floor(Math.random() * 5000)).toFixed(2);
     const revisionResult = await estimateRevisionService.issueRevisedEstimate({
       jobIdentifier: job._id.toString(),
       payload: {
         changeReason: 'SCRUM-85 hold retention test scope update',
         items: [
-          { type: 'PART', description: 'Upgraded Part', quantity: 1, unitPrice: '12000.00' },
+          { type: 'PART', description: 'Upgraded Part', quantity: 1, unitPrice: testPrice },
           { type: 'LABOUR', description: 'Specialist Labour', quantity: 1, unitPrice: '4000.00' }
         ]
       },
