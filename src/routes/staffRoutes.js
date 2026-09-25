@@ -4,6 +4,7 @@ const technicianManagementController = require('../controllers/technicianManagem
 const repairJobController = require('../controllers/repairJobController');
 const estimateController = require('../controllers/estimateController');
 const estimateRevisionController = require('../controllers/estimateRevisionController');
+const repairProgressController = require('../controllers/repairProgressController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -92,6 +93,21 @@ router.post(
   protect,
   authorizeRoles('owner_staff'),
   estimateRevisionController.issueRevisedEstimate
+);
+
+// Repair progress: Owner/Staff view and update status/notes. Locked with
+// 409 REPAIR_LOCKED while the job is Awaiting Approval.
+router.get(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.getProgressHistory
+);
+router.patch(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.updateProgress
 );
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.

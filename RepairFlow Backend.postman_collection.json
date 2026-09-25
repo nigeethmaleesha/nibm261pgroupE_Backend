@@ -3581,6 +3581,348 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Repair Progress Lock",
+      "description": "Repair progress is locked while the job is Awaiting Approval. Run the first requests right after \"Owner Staff - Estimate Revision\" (the job is then Awaiting Approval), logged in as Owner/Staff. See docs/REPAIR_PROGRESS_LOCK.md.",
+      "item": [
+        {
+          "name": "Get Progress - Locked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job is locked', () => pm.expect(d.isLocked).to.eql(true));",
+                  "pm.test('No allowed statuses', () => pm.expect(d.allowedStatuses).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "While Awaiting Approval the job reports isLocked and no allowed statuses."
+          },
+          "response": []
+        },
+        {
+          "name": "Start Repair While Awaiting Approval - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Code is REPAIR_LOCKED', () => pm.expect(d.code).to.eql('REPAIR_LOCKED'));",
+                  "pm.test('Awaiting version is reported', () => pm.expect(d.details.awaitingVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Repair\",\n  \"note\": \"Trying to start before approval\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Status changes are rejected with REPAIR_LOCKED."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Note While Awaiting Approval - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Code is REPAIR_LOCKED', () => pm.expect(d.code).to.eql('REPAIR_LOCKED'));",
+                  "pm.test('Awaiting version is reported', () => pm.expect(d.details.awaitingVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Progress note before approval\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Notes are locked too."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete While Awaiting Approval - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Code is REPAIR_LOCKED', () => pm.expect(d.code).to.eql('REPAIR_LOCKED'));",
+                  "pm.test('Awaiting version is reported', () => pm.expect(d.details.awaitingVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Ready for Collection\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Completion is locked."
+          },
+          "response": []
+        },
+        {
+          "name": "Empty Update - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "A status or a note is required."
+          },
+          "response": []
+        },
+        {
+          "name": "No Session - Update Progress Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Repair\"\n}"
+            },
+            "url": {
+              "raw": "{{noCookieBaseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{noCookieBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Login is required."
+          },
+          "response": []
+        },
+        {
+          "name": "Start Repair After Customer Approval",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job is In Repair', () => pm.expect(d.job.status).to.eql('In Repair'));",
+                  "pm.test('Update logged against approved version', () => pm.expect(d.update.estimateVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Repair\",\n  \"note\": \"Customer approved, starting repair\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Run only after the customer approves the latest estimate (Customer - Estimate Decision), then log in as Owner/Staff again. Expected: 200 and job In Repair."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Progress - Unlocked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job is unlocked', () => pm.expect(d.isLocked).to.eql(false));",
+                  "pm.test('Progress log has entries', () => pm.expect(d.updates).to.be.an('array').that.is.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "After approval the job is unlocked and the update is in the log."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [

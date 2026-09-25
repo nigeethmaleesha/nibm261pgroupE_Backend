@@ -219,7 +219,9 @@ const getEstimateContext = async ({ jobIdentifier, actor }) => {
   };
 };
 
-const ensureExistingMatches = async (existingEstimate, requestHash) => {
+// jobStatus is the job's real status: after a revision or a customer decision
+// the job is no longer Awaiting Approval for version 1.
+const ensureExistingMatches = async (existingEstimate, requestHash, jobStatus) => {
   const withHash = existingEstimate.requestHash
     ? existingEstimate
     : await estimateRepository.findInitialByJob(existingEstimate.job, { includeRequestHash: true });
@@ -237,7 +239,7 @@ const ensureExistingMatches = async (existingEstimate, requestHash) => {
     idempotentReplay: true,
     message: 'This estimate was already issued. Returning the immutable version 1.',
     estimate: await serializeEstimate(withHash),
-    jobStatus: 'Awaiting Approval'
+    jobStatus
   };
 };
 
@@ -261,7 +263,7 @@ const issueInitialEstimate = async ({ jobIdentifier, payload, actor }) => {
     { includeRequestHash: true }
   );
   if (preflightExisting) {
-    return ensureExistingMatches(preflightExisting, requestHash);
+    return ensureExistingMatches(preflightExisting, requestHash, preflightJob.status);
   }
 
   const session = await mongoose.startSession();
@@ -279,7 +281,7 @@ const issueInitialEstimate = async ({ jobIdentifier, payload, actor }) => {
         { includeRequestHash: true, session }
       );
       if (existingEstimate) {
-        result = await ensureExistingMatches(existingEstimate, requestHash);
+        result = await ensureExistingMatches(existingEstimate, requestHash, job.status);
         return;
       }
 
@@ -350,7 +352,12 @@ const issueInitialEstimate = async ({ jobIdentifier, payload, actor }) => {
         { includeRequestHash: true }
       );
       if (concurrentEstimate) {
-        return ensureExistingMatches(concurrentEstimate, requestHash);
+        const latestJob = await repairJobRepository.findByIdForEstimate(preflightJob._id);
+        return ensureExistingMatches(
+          concurrentEstimate,
+          requestHash,
+          latestJob ? latestJob.status : preflightJob.status
+        );
       }
     }
 

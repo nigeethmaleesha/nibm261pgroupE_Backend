@@ -58,9 +58,11 @@ Aliases under `/api/jobs` use the same controller/service:
 | Parts hold | Revising a job in `Waiting for Parts` records `repair_jobs.partsHold.active = true` so the hold stays active after the status changes. An existing hold is never cleared by a revision. |
 | Work blocked | Repair work and completion are blocked until the latest version is `Approved`. Completion is also blocked while a parts hold is active. |
 
-## Blocking repair work in later stories
+## Blocking repair work
 
-This backend does not yet have endpoints that start, progress or complete a repair. Future stories must use the shared guard so work cannot continue on an unapproved revision:
+Repair progress updates are locked while the job is `Awaiting Approval`. See [REPAIR_PROGRESS_LOCK.md](REPAIR_PROGRESS_LOCK.md) for the progress endpoints.
+
+Any other future route that starts, progresses or completes a repair must use the shared guard so work cannot continue on an unapproved revision:
 
 ```js
 const { requireApprovedLatestEstimate } = require('../middlewares/repairAuthorisationMiddleware');

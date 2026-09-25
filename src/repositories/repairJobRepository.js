@@ -89,6 +89,29 @@ const attachRevisedEstimate = (
   );
 };
 
+// Repair progress lock: the update only applies when the job is still in the
+// status, revision and current estimate the service validated. Issuing a
+// revised estimate changes all three (status -> Awaiting Approval), so a
+// progress update that races a revision misses instead of slipping through.
+const applyProgressUpdate = (
+  jobId,
+  { expectedStatus, expectedRevision, expectedEstimateId, set }
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: { $eq: expectedStatus, $ne: 'Awaiting Approval' },
+    currentEstimate: expectedEstimateId,
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: set,
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
 // SCRUM-41: return all jobs assigned to a specific technician, newest first.
 // Only expose the fields needed for the technician list view.
 const findAssignedToTechnician = (technicianId) =>
@@ -128,6 +151,7 @@ module.exports = {
   findByIdForEstimate,
   attachInitialEstimate,
   attachRevisedEstimate,
+  applyProgressUpdate,
   findAssignedToTechnician,
   updateStatusForDecision
 };
