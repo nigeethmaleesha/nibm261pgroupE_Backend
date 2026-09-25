@@ -13,6 +13,40 @@ const JOB_STATUSES = [
   'Collected'
 ];
 
+// Estimate revision: a revised estimate cannot be issued once the job has
+// reached one of these end-of-repair states.
+const REVISION_BLOCKED_STATUSES = [
+  'Ready for Collection',
+  'Ready for Return',
+  'Collected'
+];
+
+// A parts hold is tracked separately from status so that it survives a status
+// change such as Waiting for Parts -> Awaiting Approval during a revision.
+const partsHoldSchema = new mongoose.Schema(
+  {
+    active: {
+      type: Boolean,
+      default: false
+    },
+    reason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null
+    },
+    placedAt: {
+      type: Date,
+      default: null
+    },
+    releasedAt: {
+      type: Date,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
 const customerSnapshotSchema = new mongoose.Schema(
   {
     fullName: {
@@ -114,6 +148,10 @@ const repairJobSchema = new mongoose.Schema(
       ref: 'Estimate',
       default: null
     },
+    partsHold: {
+      type: partsHoldSchema,
+      default: () => ({})
+    },
     // Optimistic revision used when workflow commands change the job state.
     revision: {
       type: Number,
@@ -172,3 +210,4 @@ repairJobSchema.index(
 
 module.exports = mongoose.model('RepairJob', repairJobSchema);
 module.exports.JOB_STATUSES = JOB_STATUSES;
+module.exports.REVISION_BLOCKED_STATUSES = REVISION_BLOCKED_STATUSES;

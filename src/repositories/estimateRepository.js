@@ -8,8 +8,23 @@ const findInitialByJob = (jobId, { includeRequestHash = false, session = null } 
   return query;
 };
 
-const findById = (estimateId, { session = null } = {}) => {
+const findById = (estimateId, { includeRequestHash = false, session = null } = {}) => {
   let query = Estimate.findById(estimateId);
+  if (includeRequestHash) query = query.select('+requestHash');
+  if (session) query = query.session(session);
+  return query;
+};
+
+// The job's currentEstimate pointer is the source of truth for the latest
+// issued version. Jobs issued before the pointer existed fall back to version 1.
+const findCurrentByJob = (job, options = {}) => (
+  job.currentEstimate
+    ? findById(job.currentEstimate, options)
+    : findInitialByJob(job._id, options)
+);
+
+const listByJob = (jobId, { session = null } = {}) => {
+  let query = Estimate.find({ job: jobId }).sort({ versionNumber: 1 });
   if (session) query = query.session(session);
   return query;
 };
@@ -38,6 +53,7 @@ const recordDecision = (
   let query = Estimate.findOneAndUpdate(
     {
       _id: estimateId,
+      status: 'Issued',
       'decision.action': null
     },
     {
@@ -55,11 +71,31 @@ const recordDecision = (
   return query;
 };
 
+// Estimate revision: link the replaced version to its successor. Only an
+// undecided version changes status; an Approved/Rejected decision is kept as-is.
+const markSuperseded = async (estimateId, { supersededBy, supersededAt }, session = null) => {
+  const options = session ? { session } : {};
+
+  await Estimate.updateOne(
+    { _id: estimateId, supersededBy: null },
+    { $set: { supersededBy, supersededAt } },
+    options
+  );
+  await Estimate.updateOne(
+    { _id: estimateId, status: 'Issued', 'decision.action': null },
+    { $set: { status: 'Superseded' } },
+    options
+  );
+};
+
 module.exports = {
   findInitialByJob,
   findById,
+  findCurrentByJob,
+  listByJob,
   listItems,
   createEstimate,
   createItems,
-  recordDecision
+  recordDecision,
+  markSuperseded
 };
