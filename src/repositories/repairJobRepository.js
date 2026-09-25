@@ -50,6 +50,45 @@ const attachInitialEstimate = (
   { new: true, session }
 );
 
+// Estimate revision: move currentEstimate to the new version and send the job
+// back to Awaiting Approval. The filter pins the job to the state the service
+// validated (status, previous estimate and revision) so a concurrent decision or
+// revision makes this update miss instead of overwriting it. An existing parts
+// hold is never cleared here; `partsHold` is only passed to place a new one.
+const attachRevisedEstimate = (
+  jobId,
+  {
+    previousEstimateId,
+    estimateId,
+    expectedStatus,
+    expectedRevision,
+    partsHold = null
+  },
+  session
+) => {
+  const $set = {
+    currentEstimate: estimateId,
+    status: 'Awaiting Approval'
+  };
+  if (partsHold) $set.partsHold = partsHold;
+
+  return RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: expectedStatus,
+      currentEstimate: previousEstimateId,
+      ...(expectedRevision === 0
+        ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+        : { revision: expectedRevision })
+    },
+    {
+      $set,
+      $inc: { revision: 1 }
+    },
+    { returnDocument: 'after', session }
+  );
+};
+
 // SCRUM-41: return all jobs assigned to a specific technician, newest first.
 // Only expose the fields needed for the technician list view.
 const findAssignedToTechnician = (technicianId) =>
@@ -88,6 +127,7 @@ module.exports = {
   findByIdOrReference,
   findByIdForEstimate,
   attachInitialEstimate,
+  attachRevisedEstimate,
   findAssignedToTechnician,
   updateStatusForDecision
 };

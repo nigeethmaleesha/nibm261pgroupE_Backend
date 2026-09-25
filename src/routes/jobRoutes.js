@@ -1,5 +1,6 @@
 const express = require('express');
 const estimateController = require('../controllers/estimateController');
+const estimateRevisionController = require('../controllers/estimateRevisionController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -14,6 +15,20 @@ router.post(
   protect,
   authorizeRoles('owner_staff'),
   estimateController.issueInitialEstimate
+);
+
+// Estimate revision aliases. Same controller/service as the /api/staff routes.
+router.get(
+  '/:jobIdentifier/estimates',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.getEstimateHistory
+);
+router.post(
+  '/:jobIdentifier/estimate-revisions',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.issueRevisedEstimate
 );
 
 // Customer estimate decision endpoint (approve / reject).

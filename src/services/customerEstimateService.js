@@ -92,6 +92,10 @@ const getCurrentEstimate = async ({ jobIdentifier, actor }) => {
     estimate: {
       id: estimate._id,
       versionNumber: estimate.versionNumber,
+      // Estimate revision: explain why a revised version needs authorisation.
+      isRevision: estimate.versionNumber > 1,
+      revisionReason: estimate.versionNumber > 1 ? estimate.changeReason || null : null,
+      previousVersionNumber: estimate.versionNumber > 1 ? estimate.versionNumber - 1 : null,
       currency: estimate.currency,
       totalMinor: estimate.totalMinor,
       total: formatMinor(estimate.totalMinor),

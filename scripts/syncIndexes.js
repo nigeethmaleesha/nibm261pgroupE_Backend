@@ -6,6 +6,7 @@ const Otp = require('../src/models/Otp');
 const RepairJob = require('../src/models/RepairJob');
 const Estimate = require('../src/models/Estimate');
 const EstimateItem = require('../src/models/EstimateItem');
+const EstimateRevisionDraft = require('../src/models/EstimateRevisionDraft');
 
 const syncIndexes = async () => {
   try {
@@ -16,6 +17,7 @@ const syncIndexes = async () => {
     const repairJobResult = await RepairJob.syncIndexes();
     const estimateResult = await Estimate.syncIndexes();
     const estimateItemResult = await EstimateItem.syncIndexes();
+    const estimateRevisionDraftResult = await EstimateRevisionDraft.syncIndexes();
 
     console.log('User indexes synchronized. Removed indexes:', userResult);
     console.log('User indexes:', await User.collection.indexes());
@@ -27,6 +29,8 @@ const syncIndexes = async () => {
     console.log('Estimate indexes:', await Estimate.collection.indexes());
     console.log('EstimateItem indexes synchronized. Removed indexes:', estimateItemResult);
     console.log('EstimateItem indexes:', await EstimateItem.collection.indexes());
+    console.log('EstimateRevisionDraft indexes synchronized. Removed indexes:', estimateRevisionDraftResult);
+    console.log('EstimateRevisionDraft indexes:', await EstimateRevisionDraft.collection.indexes());
   } catch (error) {
     console.error('Index synchronization failed:', error.message);
     process.exitCode = 1;

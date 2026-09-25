@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const repairJobRepository = require('../repositories/repairJobRepository');
 const userRepository = require('../repositories/userRepository');
+const estimateRepository = require('../repositories/estimateRepository');
+const { getWorkAuthorisation } = require('./repairAuthorisationService');
 const { generateJobReference } = require('../utils/jobReference');
 
 const MAX_REFERENCE_ATTEMPTS = 8;
@@ -249,7 +251,13 @@ const getAssignedJobDetail = async (jobIdentifier, technicianId) => {
     throw createHttpError('You do not have permission to access this job', 403);
   }
 
-  return serializeRepairJob(job);
+  // Estimate revision: tell the technician whether repair work or completion is
+  // currently authorised by the latest approved estimate version.
+  const currentEstimate = await estimateRepository.findCurrentByJob(job);
+  return {
+    ...serializeRepairJob(job),
+    workAuthorisation: getWorkAuthorisation(job, currentEstimate)
+  };
 };
 
 module.exports = {
