@@ -144,6 +144,14 @@ const updateStatusForDecision = (
   );
 };
 
+// SCRUM-104: return all repair jobs belonging to the authenticated customer,
+// newest intake first. Only the fields needed for the customer list view are
+// projected — no internal diagnosis or staff-only context is included.
+const findByCustomer = (customerId) =>
+  RepairJob.find({ customer: customerId })
+    .select('reference deviceType makeModel serialNumber status receivedAt currentEstimate')
+    .sort({ receivedAt: -1 });
+
 module.exports = {
   create,
   findByIdempotency,
@@ -153,5 +161,6 @@ module.exports = {
   attachRevisedEstimate,
   applyProgressUpdate,
   findAssignedToTechnician,
-  updateStatusForDecision
+  updateStatusForDecision,
+  findByCustomer
 };

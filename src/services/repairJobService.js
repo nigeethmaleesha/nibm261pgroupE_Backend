@@ -260,10 +260,32 @@ const getAssignedJobDetail = async (jobIdentifier, technicianId) => {
   };
 };
 
+// SCRUM-104: lightweight DTO for the customer job list.
+// Omits reportedFault and any internal/staff-only context.
+const serializeCustomerJobListItem = (job) => ({
+  id: job._id,
+  reference: job.reference,
+  deviceType: job.deviceType,
+  makeModel: job.makeModel,
+  serialNumber: job.serialNumber || null,
+  status: job.status,
+  receivedAt: job.receivedAt,
+  hasEstimate: Boolean(job.currentEstimate)
+});
+
+// SCRUM-104: return all repair jobs owned by the authenticated customer.
+// Ownership is enforced by querying on customer === customerId; no extra
+// check is needed because the repository filter already prevents IDOR.
+const listMyJobsForCustomer = async (customerId) => {
+  const jobs = await repairJobRepository.findByCustomer(customerId);
+  return jobs.map(serializeCustomerJobListItem);
+};
+
 module.exports = {
   createRepairJob,
   lookupCustomers,
   serializeRepairJob,
   listAssignedJobs,
-  getAssignedJobDetail
+  getAssignedJobDetail,
+  listMyJobsForCustomer
 };
