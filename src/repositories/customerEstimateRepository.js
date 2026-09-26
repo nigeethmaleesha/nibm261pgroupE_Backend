@@ -10,7 +10,17 @@ const findLatestIssuedByJob = (jobId) => Estimate.findOne({ job: jobId })
 const listPublicItems = (estimateId) => EstimateItem.find({ estimate: estimateId })
   .sort({ lineNumber: 1 });
 
+const findById = (estimateId) => Estimate.findById(estimateId);
+
+const findPreviouslyApproved = (jobId, maxVersion) => Estimate.findOne({
+  job: jobId,
+  versionNumber: { $lt: maxVersion },
+  status: 'Approved'
+}).sort({ versionNumber: -1 });
+
 module.exports = {
   findLatestIssuedByJob,
-  listPublicItems
+  listPublicItems,
+  findById,
+  findPreviouslyApproved
 };

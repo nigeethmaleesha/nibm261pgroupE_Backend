@@ -256,7 +256,7 @@ const getAssignedJobDetail = async (jobIdentifier, technicianId) => {
   const currentEstimate = await estimateRepository.findCurrentByJob(job);
   return {
     ...serializeRepairJob(job),
-    workAuthorisation: getWorkAuthorisation(job, currentEstimate)
+    workAuthorisation: await getWorkAuthorisation(job, currentEstimate)
   };
 };
 
