@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const estimateRepository = require('../repositories/estimateRepository');
 const repairJobRepository = require('../repositories/repairJobRepository');
 const diagnosisRepository = require('../repositories/diagnosisCompatibilityRepository');
+const estimateRevisionDraftRepository = require('../repositories/estimateRevisionDraftRepository');
+const { revisionEligibilityFor, getWorkAuthorisation } = require('./repairAuthorisationService');
 const { parseLkrToMinor, multiplyMinor, sumMinor, formatMinor } = require('../utils/money');
 
 const createHttpError = (message, statusCode, code, details) => {
@@ -129,6 +131,10 @@ const serializeEstimate = async (estimate, { session = null } = {}) => {
     totalMinor: estimate.totalMinor,
     total: formatMinor(estimate.totalMinor),
     status: estimate.status || 'Issued',
+    changeReason: estimate.changeReason || null,
+    basedOnEstimateId: estimate.basedOnEstimate || null,
+    supersededBy: estimate.supersededBy || null,
+    supersededAt: estimate.supersededAt || null,
     issuedBy: estimate.issuedBy,
     issuedAt: estimate.issuedAt,
     isImmutable: estimate.isImmutable,
@@ -174,14 +180,16 @@ const getEstimateContext = async ({ jobIdentifier, actor }) => {
     throw createHttpError('You are not authorized to view this repair job estimate', 403, 'FORBIDDEN');
   }
 
-  const [diagnosis, existingEstimate] = await Promise.all([
+  const [diagnosis, existingEstimate, latestEstimate, revisionDraft] = await Promise.all([
     diagnosisRepository.findCompletedByJob(job._id),
-    estimateRepository.findInitialByJob(job._id)
+    estimateRepository.findInitialByJob(job._id),
+    estimateRepository.findCurrentByJob(job),
+    estimateRevisionDraftRepository.findByJob(job._id)
   ]);
 
   const eligibility = eligibilityFor(job, diagnosis, existingEstimate);
-  const currentEstimate = existingEstimate
-    ? await serializeEstimate(existingEstimate)
+  const currentEstimate = latestEstimate
+    ? await serializeEstimate(latestEstimate)
     : null;
 
   return {
@@ -204,11 +212,16 @@ const getEstimateContext = async ({ jobIdentifier, actor }) => {
     },
     diagnosis: diagnosisRepository.serializeForStaff(diagnosis),
     eligibility,
+    revisionEligibility: revisionEligibilityFor(job, latestEstimate),
+    hasRevisionDraft: Boolean(revisionDraft),
+    workAuthorisation: getWorkAuthorisation(job, latestEstimate),
     currentEstimate
   };
 };
 
-const ensureExistingMatches = async (existingEstimate, requestHash) => {
+// jobStatus is the job's real status: after a revision or a customer decision
+// the job is no longer Awaiting Approval for version 1.
+const ensureExistingMatches = async (existingEstimate, requestHash, jobStatus) => {
   const withHash = existingEstimate.requestHash
     ? existingEstimate
     : await estimateRepository.findInitialByJob(existingEstimate.job, { includeRequestHash: true });
@@ -226,7 +239,7 @@ const ensureExistingMatches = async (existingEstimate, requestHash) => {
     idempotentReplay: true,
     message: 'This estimate was already issued. Returning the immutable version 1.',
     estimate: await serializeEstimate(withHash),
-    jobStatus: 'Awaiting Approval'
+    jobStatus
   };
 };
 
@@ -250,7 +263,7 @@ const issueInitialEstimate = async ({ jobIdentifier, payload, actor }) => {
     { includeRequestHash: true }
   );
   if (preflightExisting) {
-    return ensureExistingMatches(preflightExisting, requestHash);
+    return ensureExistingMatches(preflightExisting, requestHash, preflightJob.status);
   }
 
   const session = await mongoose.startSession();
@@ -268,7 +281,7 @@ const issueInitialEstimate = async ({ jobIdentifier, payload, actor }) => {
         { includeRequestHash: true, session }
       );
       if (existingEstimate) {
-        result = await ensureExistingMatches(existingEstimate, requestHash);
+        result = await ensureExistingMatches(existingEstimate, requestHash, job.status);
         return;
       }
 
@@ -339,7 +352,12 @@ const issueInitialEstimate = async ({ jobIdentifier, payload, actor }) => {
         { includeRequestHash: true }
       );
       if (concurrentEstimate) {
-        return ensureExistingMatches(concurrentEstimate, requestHash);
+        const latestJob = await repairJobRepository.findByIdForEstimate(preflightJob._id);
+        return ensureExistingMatches(
+          concurrentEstimate,
+          requestHash,
+          latestJob ? latestJob.status : preflightJob.status
+        );
       }
     }
 
@@ -390,7 +408,9 @@ const recordEstimateDecision = async ({ jobIdentifier, payload = {}, actor }) =>
     );
   }
 
-  const currentEstimate = await estimateRepository.findInitialByJob(job._id);
+  // Decisions always apply to the latest issued version. Earlier versions that
+  // were replaced by a revision can no longer be approved or rejected.
+  const currentEstimate = await estimateRepository.findCurrentByJob(job);
   if (!currentEstimate) {
     throw createHttpError('No issued estimate found for this repair job', 404, 'NOT_FOUND');
   }

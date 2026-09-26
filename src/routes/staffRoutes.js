@@ -3,6 +3,8 @@ const internalAuthController = require('../controllers/internalAuthController');
 const technicianManagementController = require('../controllers/technicianManagementController');
 const repairJobController = require('../controllers/repairJobController');
 const estimateController = require('../controllers/estimateController');
+const estimateRevisionController = require('../controllers/estimateRevisionController');
+const repairProgressController = require('../controllers/repairProgressController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -58,6 +60,54 @@ router.post(
   protect,
   authorizeRoles('owner_staff'),
   estimateController.issueInitialEstimate
+);
+
+// Estimate revision: full version history, a single per-job draft that never
+// replaces the current estimate, and issuing a new sequential version.
+router.get(
+  '/jobs/:jobIdentifier/estimates',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.getEstimateHistory
+);
+router.get(
+  '/jobs/:jobIdentifier/estimate-revisions/draft',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.getRevisionDraft
+);
+router.put(
+  '/jobs/:jobIdentifier/estimate-revisions/draft',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.saveRevisionDraft
+);
+router.delete(
+  '/jobs/:jobIdentifier/estimate-revisions/draft',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.discardRevisionDraft
+);
+router.post(
+  '/jobs/:jobIdentifier/estimate-revisions',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.issueRevisedEstimate
+);
+
+// Repair progress: Owner/Staff view and update status/notes. Locked with
+// 409 REPAIR_LOCKED while the job is Awaiting Approval.
+router.get(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.getProgressHistory
+);
+router.patch(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.updateProgress
 );
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.

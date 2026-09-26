@@ -25,6 +25,13 @@ const estimateSchema = new mongoose.Schema(
       default: null,
       immutable: true
     },
+    // Estimate revision: the version this one replaced. Null for version 1.
+    basedOnEstimate: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null,
+      immutable: true
+    },
     currency: {
       type: String,
       enum: ['LKR'],
@@ -65,11 +72,23 @@ const estimateSchema = new mongoose.Schema(
       required: true,
       immutable: true
     },
+    // 'Superseded' is only used for a version that was replaced by a revision
+    // before the customer decided it. Decided versions keep Approved/Rejected so
+    // the decision history is never rewritten.
     status: {
       type: String,
-      enum: ['Issued', 'Approved', 'Rejected'],
+      enum: ['Issued', 'Approved', 'Rejected', 'Superseded'],
       default: 'Issued',
       required: true
+    },
+    supersededBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null
+    },
+    supersededAt: {
+      type: Date,
+      default: null
     },
     decision: {
       action: {
