@@ -8,17 +8,24 @@ const findByIdempotency = (createdBy, idempotencyKey) => RepairJob.findOne({
   idempotencyKey
 }).select('+idempotencyKey +requestHash');
 
+
+const findByIdOrReference = (identifier, { session = null } = {}) => {
+  const value = String(identifier || '').trim();
+  const filter = mongoose.isValidObjectId(value)
+    ? { _id: value }
+    : { reference: value.toUpperCase() };
+
+  let query = RepairJob.findOne(filter);
+  if (session) query = query.session(session);
+  return query;
+};
+
+
 const identifierFilter = (identifier) => {
   const value = String(identifier || '').trim();
   return mongoose.isValidObjectId(value)
     ? { _id: value }
     : { reference: value.toUpperCase() };
-};
-
-const findByIdOrReference = (identifier, { session = null } = {}) => {
-  let query = RepairJob.findOne(identifierFilter(identifier));
-  if (session) query = query.session(session);
-  return query;
 };
 
 const findByIdForEstimate = (jobId, { session = null } = {}) => {
@@ -50,6 +57,7 @@ const attachInitialEstimate = (
   },
   { new: true, session }
 );
+
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -130,6 +138,68 @@ const assignTechnician = (
   );
 };
 
+// Estimate revision: move currentEstimate to the new version and send the job
+// back to Awaiting Approval. The filter pins the job to the state the service
+// validated (status, previous estimate and revision) so a concurrent decision or
+// revision makes this update miss instead of overwriting it. An existing parts
+// hold is never cleared here; `partsHold` is only passed to place a new one.
+const attachRevisedEstimate = (
+  jobId,
+  {
+    previousEstimateId,
+    estimateId,
+    expectedStatus,
+    expectedRevision,
+    partsHold = null
+  },
+  session
+) => {
+  const $set = {
+    currentEstimate: estimateId,
+    status: 'Awaiting Approval'
+  };
+  if (partsHold) $set.partsHold = partsHold;
+
+  return RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: expectedStatus,
+      currentEstimate: previousEstimateId,
+      ...(expectedRevision === 0
+        ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+        : { revision: expectedRevision })
+    },
+    {
+      $set,
+      $inc: { revision: 1 }
+    },
+    { returnDocument: 'after', session }
+  );
+};
+
+// Repair progress lock: the update only applies when the job is still in the
+// status, revision and current estimate the service validated. Issuing a
+// revised estimate changes all three (status -> Awaiting Approval), so a
+// progress update that races a revision misses instead of slipping through.
+const applyProgressUpdate = (
+  jobId,
+  { expectedStatus, expectedRevision, expectedEstimateId, set }
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: { $eq: expectedStatus, $ne: 'Awaiting Approval' },
+    currentEstimate: expectedEstimateId,
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: set,
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
 // SCRUM-41: return all jobs assigned to a specific technician, newest first.
 // Only expose the fields needed for the technician list view.
 const findAssignedToTechnician = (technicianId) =>
@@ -162,6 +232,14 @@ const updateStatusForDecision = (
   );
 };
 
+// SCRUM-104: return all repair jobs belonging to the authenticated customer,
+// newest intake first. Only the fields needed for the customer list view are
+// projected — no internal diagnosis or staff-only context is included.
+const findByCustomer = (customerId) =>
+  RepairJob.find({ customer: customerId })
+    .select('reference deviceType makeModel serialNumber status receivedAt currentEstimate')
+    .sort({ receivedAt: -1 });
+
 module.exports = {
   create,
   findByIdempotency,
@@ -171,6 +249,9 @@ module.exports = {
   searchForStaff,
   findForStaffDetail,
   assignTechnician,
+  attachRevisedEstimate,
+  applyProgressUpdate,
   findAssignedToTechnician,
-  updateStatusForDecision
+  updateStatusForDecision,
+  findByCustomer
 };
