@@ -2450,8 +2450,224 @@
       ]
     },
     {
-      "name": "Technician - Assigned Jobs (SCRUM-41)",
-      "description": "SCRUM-41: A technician can only see and open jobs explicitly assigned to them.\n\nSetup:\n1. Log in as a technician via POST /api/technician/auth/login then verify OTP.\n2. Assign at least one RepairJob to this technician in MongoDB Atlas (set assignedTechnician to this user _id).\n3. The list test auto-saves technicianJobReference and technicianJobId from the first result.",
+      "name": "Customer - Estimate Decision Copy",
+      "item": [
+        {
+          "name": "Get Job Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Has job details', () => pm.expect(d).to.have.property('job'));",
+                  "pm.test('Has currentEstimate', () => pm.expect(d).to.have.property('currentEstimate'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate"
+              ]
+            },
+            "description": "Allows the job customer to view estimate items, version, total, and current status."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Initial Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job status is Approved', () => pm.expect(d.jobStatus).to.eql('Approved'));",
+                  "pm.test('Estimate status is Approved', () => pm.expect(d.estimateStatus).to.eql('Approved'));",
+                  "pm.test('Decision action is APPROVED', () => pm.expect(d.decision.action).to.eql('APPROVED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\",\n  \"versionNumber\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Customer confirms approval of the initial estimate. Changes job status to Approved and estimate status to Approved."
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Approval (Idempotent Test)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Idempotent replay is true', () => pm.expect(d.idempotentReplay).to.eql(true));",
+                  "pm.test('Job status remains Approved', () => pm.expect(d.jobStatus).to.eql('Approved'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Retrying the exact same decision request returns the saved result without duplicate database events."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Initial Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job status is Estimate Rejected', () => pm.expect(d.jobStatus).to.eql('Estimate Rejected'));",
+                  "pm.test('Estimate status is Rejected', () => pm.expect(d.estimateStatus).to.eql('Rejected'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"REJECT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Customer confirms rejection of the estimate. Changes job status to Estimate Rejected and estimate status to Rejected."
+          },
+          "response": []
+        },
+        {
+          "name": "Stale Decision - Expect 409 Conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Message prompts refresh', () => pm.expect(d.message).to.include('refresh'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"REJECT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate-decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-decision"
+              ]
+            },
+            "description": "Submitting a conflicting decision on an estimate that was already decided or superseded returns 409 State Conflict."
+          },
+          "response": []
+        }
+      ],
+      "description": "Customer estimate approval and rejection requests, including idempotency replays and stale state checks."
+    },
+    {
+      "name": "Technician - Assigned Jobs (SCRUM-41) Copy",
       "item": [
         {
           "name": "[SCRUM-41] List My Assigned Jobs",
@@ -2690,6 +2906,1022 @@
           },
           "response": []
         }
+      ],
+      "description": "SCRUM-41: A technician can only see and open jobs explicitly assigned to them.\n\nSetup:\n1. Log in as a technician via POST /api/technician/auth/login then verify OTP.\n2. Assign at least one RepairJob to this technician in MongoDB Atlas (set assignedTechnician to this user _id).\n3. The list test auto-saves technicianJobReference and technicianJobId from the first result."
+    },
+    {
+      "name": "Customer - Current Estimate View (SCRUM-15) Copy",
+      "item": [
+        {
+          "name": "Get Current Estimate - Issued Estimate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst d = pm.response.json();\npm.test('Job belongs to the permitted customer view', () => pm.expect(d.job).to.be.an('object'));\npm.test('Issued estimate is present', () => { pm.expect(d.hasEstimate).to.eql(true); pm.expect(d.estimate).to.be.an('object'); });\npm.test('Required estimate fields are returned', () => { pm.expect(d.estimate.versionNumber).to.be.a('number'); pm.expect(d.estimate.items).to.be.an('array'); pm.expect(d.estimate.total).to.be.a('string'); pm.expect(d.estimate.issuedAt).to.be.a('string'); pm.expect(d.estimate.decisionState).to.be.a('string'); });\npm.test('Customer response contains no diagnosis/internal notes', () => { const body = JSON.stringify(d).toLowerCase(); pm.expect(body).to.not.include('diagnosis'); pm.expect(body).to.not.include('internalnote'); pm.expect(body).to.not.include('internal_note'); pm.expect(d.estimate).to.not.have.property('issuedBy'); });\npm.test('Decision control flag matches waiting state', () => { if (d.estimate.canDecide) pm.expect(d.estimate.decisionState).to.eql('AWAITING_APPROVAL'); });",
+                  "pm.test('Staff/private identifiers are scrubbed', () => { const body = JSON.stringify(d); ['issuedBy','createdBy','decidedBy','customerSnapshot','assignedTechnician','reportedFault'].forEach((field) => pm.expect(body).to.not.include('\\\"' + field + '\\\"')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{repairJobReference}}/current-estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{repairJobReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Customer-only endpoint for the latest issued estimate. Expected: 200. The DTO is intentionally scrubbed of diagnosis/internal staff data."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current Estimate - Waiting Message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));\nconst d = pm.response.json();\npm.test('No estimate is returned', () => { pm.expect(d.hasEstimate).to.eql(false); pm.expect(d.estimate).to.eql(null); });\npm.test('Informative waiting message is returned', () => pm.expect(d.message).to.be.a('string').and.not.empty);\npm.test('No diagnosis/internal notes are exposed', () => pm.expect(JSON.stringify(d).toLowerCase()).to.not.include('diagnosis'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{customerJobWithoutEstimateReference}}/current-estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{customerJobWithoutEstimateReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Set customerJobWithoutEstimateReference to a repair job owned by the logged-in customer that has no estimate. Expected: 200 with hasEstimate=false and an informative message."
+          },
+          "response": []
+        },
+        {
+          "name": "Another Customer Job - Must Not Leak",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));\nconst d = pm.response.json();\npm.test('Generic not-found response only', () => pm.expect(d.message).to.eql('Repair job not found'));\npm.test('No estimate/job details leak', () => { pm.expect(d).to.not.have.property('estimate'); pm.expect(d).to.not.have.property('job'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{otherCustomerJobReference}}/current-estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{otherCustomerJobReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Set otherCustomerJobReference to a job owned by a different customer. Expected: 404 so the API does not disclose whether another customer record exists."
+          },
+          "response": []
+        },
+        {
+          "name": "No Customer Session - Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));\nconst d = pm.response.json();\npm.test('Authentication is required', () => pm.expect(d.message).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{noCookieBaseUrl}}/api/customer/jobs/{{repairJobReference}}/current-estimate",
+              "host": [
+                "{{noCookieBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{repairJobReference}}",
+                "current-estimate"
+              ]
+            },
+            "description": "Uses 127.0.0.1 via noCookieBaseUrl so localhost auth cookies are not sent. Expected: 401."
+          },
+          "response": []
+        },
+        {
+          "name": "Legacy Staff Estimate Context - Customer Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "const d = pm.response.json();",
+                  "pm.test('Staff-only context is blocked for customer', () => pm.expect(d.message).to.be.a('string'));",
+                  "pm.test('No staff/diagnosis payload is returned', () => { const body = JSON.stringify(d).toLowerCase(); pm.expect(body).to.not.include('diagnosis'); pm.expect(d).to.not.have.property('estimate'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/estimate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate"
+              ]
+            },
+            "description": "SCRUM-15 hardening check. The old estimate-context endpoint is staff-only because it can include diagnosis context. With a customer session this must return 403; customers use /api/customer/jobs/:id/current-estimate instead."
+          },
+          "response": []
+        }
+      ],
+      "description": "SCRUM-15 verification for the customer current-estimate view. Prerequisites: 1) the customer is logged in on {{baseUrl}} and has completed login OTP verification, 2) {{repairJobReference}} belongs to that same customer and has an issued estimate, 3) for the waiting-state test, set {{customerJobWithoutEstimateReference}} to a job owned by the same customer with no issued estimate, 4) for the ownership test, set {{otherCustomerJobReference}} to a job owned by a different customer. The endpoint must never return diagnosis/internal-note data."
+    },
+    {
+      "name": "Owner Staff - Estimate Revision",
+      "description": "Owner/Staff issues a revised estimate when work or cost changes. Log in as Owner/Staff first and make sure {{repairJobReference}} already has an issued estimate. See docs/ESTIMATE_REVISION.md.",
+      "item": [
+        {
+          "name": "Estimate History",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Versions are listed', () => pm.expect(d.versions).to.be.an('array').that.is.not.empty);",
+                  "pm.test('Exactly one current version', () => pm.expect(d.versions.filter((v) => v.isCurrent).length).to.eql(1));",
+                  "pm.collectionVariables.set('currentEstimateVersion', d.currentVersionNumber);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimates"
+              ]
+            },
+            "description": "All issued versions with lines, change reasons and decisions. Stores the current version for later requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Save Revision Draft",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Draft is saved as Draft', () => pm.expect(d.draft.status).to.eql('Draft'));",
+                  "pm.test('Draft does not replace the current estimate', () => { pm.expect(d.draft.replacesCurrentEstimate).to.eql(false); pm.expect(d.draft.authorisesWork).to.eql(false); });",
+                  "pm.test('Draft is based on the current version', () => pm.expect(d.draft.baseVersionNumber).to.eql(Number(pm.collectionVariables.get('currentEstimateVersion'))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"type\": \"PART\",\n      \"description\": \"Charging port assembly\",\n      \"quantity\": 1,\n      \"unitPrice\": \"4500.00\"\n    },\n    {\n      \"type\": \"LABOUR\",\n      \"description\": \"Charging port replacement labour\",\n      \"quantity\": 1,\n      \"unitPrice\": \"2500.00\"\n    },\n    {\n      \"type\": \"PART\",\n      \"description\": \"Replacement battery\",\n      \"quantity\": 1,\n      \"unitPrice\": \"8000.00\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions/draft",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions",
+                "draft"
+              ]
+            },
+            "description": "Saves a draft without a change reason. It must not replace the current estimate."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Revision Draft",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Draft has lines', () => pm.expect(pm.response.json().draft.items.length).to.eql(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions/draft",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions",
+                "draft"
+              ]
+            },
+            "description": "Returns the saved draft for the job."
+          },
+          "response": []
+        },
+        {
+          "name": "Context After Draft - Current Unchanged",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Current version unchanged', () => pm.expect(d.currentEstimate.versionNumber).to.eql(Number(pm.collectionVariables.get('currentEstimateVersion'))));",
+                  "pm.test('Draft is reported', () => pm.expect(d.hasRevisionDraft).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-context"
+              ]
+            },
+            "description": "The current estimate is still the previously issued version after saving a draft."
+          },
+          "response": []
+        },
+        {
+          "name": "Issue Revision - Missing Reason - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mentions changeReason', () => pm.expect(pm.response.json().message).to.include('changeReason'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"type\": \"PART\",\n      \"description\": \"Charging port assembly\",\n      \"quantity\": 1,\n      \"unitPrice\": \"4500.00\"\n    },\n    {\n      \"type\": \"LABOUR\",\n      \"description\": \"Charging port replacement labour\",\n      \"quantity\": 1,\n      \"unitPrice\": \"2500.00\"\n    },\n    {\n      \"type\": \"PART\",\n      \"description\": \"Replacement battery\",\n      \"quantity\": 1,\n      \"unitPrice\": \"8000.00\"\n    }\n  ],\n  \"changeReason\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions"
+              ]
+            },
+            "description": "A change reason is required to issue a revision."
+          },
+          "response": []
+        },
+        {
+          "name": "Issue Revision - Invalid Amount - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"type\": \"PART\",\n      \"description\": \"Screen\",\n      \"quantity\": 1,\n      \"unitPrice\": \"100.999\"\n    }\n  ],\n  \"changeReason\": \"Battery also found faulty during repair\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions"
+              ]
+            },
+            "description": "Same amount-validation rules as the initial estimate."
+          },
+          "response": []
+        },
+        {
+          "name": "Issue Revision - Stale Base Version - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Code is STATE_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('STATE_CONFLICT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"type\": \"PART\",\n      \"description\": \"Charging port assembly\",\n      \"quantity\": 1,\n      \"unitPrice\": \"4500.00\"\n    },\n    {\n      \"type\": \"LABOUR\",\n      \"description\": \"Charging port replacement labour\",\n      \"quantity\": 1,\n      \"unitPrice\": \"2500.00\"\n    },\n    {\n      \"type\": \"PART\",\n      \"description\": \"Replacement battery\",\n      \"quantity\": 1,\n      \"unitPrice\": \"8000.00\"\n    }\n  ],\n  \"changeReason\": \"Battery also found faulty during repair\",\n  \"baseVersionNumber\": 999\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions"
+              ]
+            },
+            "description": "A revision prepared against a version that is not current is rejected."
+          },
+          "response": []
+        },
+        {
+          "name": "Issue Revised Estimate from Draft",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json();",
+                  "const previous = Number(pm.collectionVariables.get('currentEstimateVersion'));",
+                  "pm.test('New sequential version', () => pm.expect(d.estimate.versionNumber).to.eql(previous + 1));",
+                  "pm.test('Job is Awaiting Approval', () => pm.expect(d.jobStatus).to.eql('Awaiting Approval'));",
+                  "pm.test('Change reason saved', () => pm.expect(d.estimate.changeReason).to.eql('Battery also found faulty during repair'));",
+                  "pm.test('Repair work is blocked until approval', () => pm.expect(d.workAuthorisation.canContinueRepair).to.eql(false));",
+                  "pm.collectionVariables.set('currentEstimateVersion', d.estimate.versionNumber);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"useDraft\": true,\n  \"changeReason\": \"Battery also found faulty during repair\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions"
+              ]
+            },
+            "description": "Issues the saved draft as the next version. Expected: 201 and job status Awaiting Approval."
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Revision (Idempotent Test)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Idempotent replay', () => pm.expect(d.idempotentReplay).to.eql(true));",
+                  "pm.test('Same version returned', () => pm.expect(d.estimate.versionNumber).to.eql(Number(pm.collectionVariables.get('currentEstimateVersion'))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"type\": \"PART\",\n      \"description\": \"Charging port assembly\",\n      \"quantity\": 1,\n      \"unitPrice\": \"4500.00\"\n    },\n    {\n      \"type\": \"LABOUR\",\n      \"description\": \"Charging port replacement labour\",\n      \"quantity\": 1,\n      \"unitPrice\": \"2500.00\"\n    },\n    {\n      \"type\": \"PART\",\n      \"description\": \"Replacement battery\",\n      \"quantity\": 1,\n      \"unitPrice\": \"8000.00\"\n    }\n  ],\n  \"changeReason\": \"Battery also found faulty during repair\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions"
+              ]
+            },
+            "description": "Sending the same revision again returns the saved version instead of creating another one."
+          },
+          "response": []
+        },
+        {
+          "name": "History After Revision",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "const current = d.versions.find((v) => v.isCurrent);",
+                  "const previous = d.versions[d.versions.length - 2];",
+                  "pm.test('Latest version is current', () => pm.expect(current.versionNumber).to.eql(d.versions[d.versions.length - 1].versionNumber));",
+                  "pm.test('Previous version kept with its lines', () => pm.expect(previous.items).to.be.an('array').that.is.not.empty);",
+                  "pm.test('Previous version is superseded', () => pm.expect(previous.supersededAt).to.be.a('string'));",
+                  "pm.test('Draft was cleared', () => pm.expect(d.draftRevision).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimates"
+              ]
+            },
+            "description": "Previous versions keep their content and decisions."
+          },
+          "response": []
+        },
+        {
+          "name": "Discard Draft - None Exists - Expect 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions/draft",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions",
+                "draft"
+              ]
+            },
+            "description": "The draft was removed when it was issued."
+          },
+          "response": []
+        },
+        {
+          "name": "No Session - Issue Revision Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"type\": \"PART\",\n      \"description\": \"Charging port assembly\",\n      \"quantity\": 1,\n      \"unitPrice\": \"4500.00\"\n    },\n    {\n      \"type\": \"LABOUR\",\n      \"description\": \"Charging port replacement labour\",\n      \"quantity\": 1,\n      \"unitPrice\": \"2500.00\"\n    },\n    {\n      \"type\": \"PART\",\n      \"description\": \"Replacement battery\",\n      \"quantity\": 1,\n      \"unitPrice\": \"8000.00\"\n    }\n  ],\n  \"changeReason\": \"Battery also found faulty during repair\"\n}"
+            },
+            "url": {
+              "raw": "{{noCookieBaseUrl}}/api/staff/jobs/{{repairJobReference}}/estimate-revisions",
+              "host": [
+                "{{noCookieBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "estimate-revisions"
+              ]
+            },
+            "description": "Owner/Staff session is required."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Repair Progress Lock",
+      "description": "Repair progress is locked while the job is Awaiting Approval. Run the first requests right after \"Owner Staff - Estimate Revision\" (the job is then Awaiting Approval), logged in as Owner/Staff. See docs/REPAIR_PROGRESS_LOCK.md.",
+      "item": [
+        {
+          "name": "Get Progress - Locked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job is locked', () => pm.expect(d.isLocked).to.eql(true));",
+                  "pm.test('No allowed statuses', () => pm.expect(d.allowedStatuses).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "While Awaiting Approval the job reports isLocked and no allowed statuses."
+          },
+          "response": []
+        },
+        {
+          "name": "Start Repair While Awaiting Approval - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Code is REPAIR_LOCKED', () => pm.expect(d.code).to.eql('REPAIR_LOCKED'));",
+                  "pm.test('Awaiting version is reported', () => pm.expect(d.details.awaitingVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Repair\",\n  \"note\": \"Trying to start before approval\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Status changes are rejected with REPAIR_LOCKED."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Note While Awaiting Approval - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Code is REPAIR_LOCKED', () => pm.expect(d.code).to.eql('REPAIR_LOCKED'));",
+                  "pm.test('Awaiting version is reported', () => pm.expect(d.details.awaitingVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Progress note before approval\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Notes are locked too."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete While Awaiting Approval - Expect 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const d = pm.response.json();",
+                  "pm.test('Code is REPAIR_LOCKED', () => pm.expect(d.code).to.eql('REPAIR_LOCKED'));",
+                  "pm.test('Awaiting version is reported', () => pm.expect(d.details.awaitingVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Ready for Collection\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Completion is locked."
+          },
+          "response": []
+        },
+        {
+          "name": "Empty Update - Expect 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "A status or a note is required."
+          },
+          "response": []
+        },
+        {
+          "name": "No Session - Update Progress Must Fail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Repair\"\n}"
+            },
+            "url": {
+              "raw": "{{noCookieBaseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{noCookieBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Login is required."
+          },
+          "response": []
+        },
+        {
+          "name": "Start Repair After Customer Approval",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job is In Repair', () => pm.expect(d.job.status).to.eql('In Repair'));",
+                  "pm.test('Update logged against approved version', () => pm.expect(d.update.estimateVersionNumber).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Repair\",\n  \"note\": \"Customer approved, starting repair\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "Run only after the customer approves the latest estimate (Customer - Estimate Decision), then log in as Owner/Staff again. Expected: 200 and job In Repair."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Progress - Unlocked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test('Job is unlocked', () => pm.expect(d.isLocked).to.eql(false));",
+                  "pm.test('Progress log has entries', () => pm.expect(d.updates).to.be.an('array').that.is.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{repairJobReference}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{repairJobReference}}",
+                "progress"
+              ]
+            },
+            "description": "After approval the job is unlocked and the update is in the log."
+          },
+          "response": []
+        }
       ]
     }
   ],
@@ -2775,11 +4007,7 @@
       "value": ""
     },
     {
-      "key": "technicianJobReference",
-      "value": ""
-    },
-    {
-      "key": "technicianJobId",
+      "key": "currentEstimateVersion",
       "value": ""
     }
   ]

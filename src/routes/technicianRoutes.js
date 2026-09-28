@@ -1,6 +1,7 @@
 const express = require('express');
 const internalAuthController = require('../controllers/internalAuthController');
 const repairJobController = require('../controllers/repairJobController');
+const repairProgressController = require('../controllers/repairProgressController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
 
@@ -35,6 +36,21 @@ router.get(
   protect,
   authorizeRoles('technician'),
   repairJobController.getMyJob
+);
+
+// Repair progress: assigned technician updates status/notes. Locked with
+// 409 REPAIR_LOCKED while the job is Awaiting Approval.
+router.get(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('technician'),
+  repairProgressController.getProgressHistory
+);
+router.patch(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('technician'),
+  repairProgressController.updateProgress
 );
 
 module.exports = router;
