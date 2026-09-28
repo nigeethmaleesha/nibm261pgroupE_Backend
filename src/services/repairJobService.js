@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const repairJobRepository = require('../repositories/repairJobRepository');
 const userRepository = require('../repositories/userRepository');
 const repairJobAssignmentAuditRepository = require('../repositories/repairJobAssignmentAuditRepository');
+const estimateRepository = require('../repositories/estimateRepository');
+const { getWorkAuthorisation } = require('./repairAuthorisationService');
 const { generateJobReference } = require('../utils/jobReference');
 
 const MAX_REFERENCE_ATTEMPTS = 8;
@@ -467,7 +469,34 @@ const getAssignedJobDetail = async (jobIdentifier, technicianId) => {
     throw createHttpError('You do not have permission to access this job', 403);
   }
 
-  return serializeRepairJob(job);
+  // Estimate revision: tell the technician whether repair work or completion is
+  // currently authorised by the latest approved estimate version.
+  const currentEstimate = await estimateRepository.findCurrentByJob(job);
+  return {
+    ...serializeRepairJob(job),
+    workAuthorisation: await getWorkAuthorisation(job, currentEstimate)
+  };
+};
+
+// SCRUM-104: lightweight DTO for the customer job list.
+// Omits reportedFault and any internal/staff-only context.
+const serializeCustomerJobListItem = (job) => ({
+  id: job._id,
+  reference: job.reference,
+  deviceType: job.deviceType,
+  makeModel: job.makeModel,
+  serialNumber: job.serialNumber || null,
+  status: job.status,
+  receivedAt: job.receivedAt,
+  hasEstimate: Boolean(job.currentEstimate)
+});
+
+// SCRUM-104: return all repair jobs owned by the authenticated customer.
+// Ownership is enforced by querying on customer === customerId; no extra
+// check is needed because the repository filter already prevents IDOR.
+const listMyJobsForCustomer = async (customerId) => {
+  const jobs = await repairJobRepository.findByCustomer(customerId);
+  return jobs.map(serializeCustomerJobListItem);
 };
 
 module.exports = {
@@ -478,5 +507,6 @@ module.exports = {
   getStaffRepairJobDetail,
   assignRepairJob,
   listAssignedJobs,
-  getAssignedJobDetail
+  getAssignedJobDetail,
+  listMyJobsForCustomer
 };
