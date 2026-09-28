@@ -1,5 +1,6 @@
 const express = require('express');
 const estimateController = require('../controllers/estimateController');
+const estimateRevisionController = require('../controllers/estimateRevisionController');
 const repairJobController = require('../controllers/repairJobController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
@@ -16,6 +17,27 @@ router.post(
   authorizeRoles('owner_staff'),
   estimateController.issueInitialEstimate
 );
+
+// Estimate revision aliases. Same controller/service as the /api/staff routes.
+router.get(
+  '/:jobIdentifier/estimates',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.getEstimateHistory
+);
+router.get(
+  '/:jobIdentifier/estimates/history',
+  protect,
+  authorizeRoles('customer', 'owner_staff'),
+  estimateRevisionController.getEstimateHistory
+);
+router.post(
+  '/:jobIdentifier/estimate-revisions',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.issueRevisedEstimate
+);
+
 
 // SCRUM-11 Jira endpoint: Owner/Staff assigns or reassigns a technician.
 // This aliases the staff route while preserving the exact Jira path.
@@ -34,11 +56,13 @@ router.post(
   estimateController.recordEstimateDecision
 );
 
-// Customer estimate context endpoint.
+// Legacy staff estimate-context alias. SCRUM-15 customers must use
+// /api/customer/jobs/:jobIdentifier/current-estimate so diagnosis/internal
+// context can never be exposed through the customer API surface.
 router.get(
   '/:jobIdentifier/estimate',
   protect,
-  authorizeRoles('customer', 'owner_staff'),
+  authorizeRoles('owner_staff'),
   estimateController.getEstimateContext
 );
 
