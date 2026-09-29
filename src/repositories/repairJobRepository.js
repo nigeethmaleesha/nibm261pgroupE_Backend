@@ -20,6 +20,14 @@ const findByIdOrReference = (identifier, { session = null } = {}) => {
   return query;
 };
 
+
+const identifierFilter = (identifier) => {
+  const value = String(identifier || '').trim();
+  return mongoose.isValidObjectId(value)
+    ? { _id: value }
+    : { reference: value.toUpperCase() };
+};
+
 const findByIdForEstimate = (jobId, { session = null } = {}) => {
   let query = RepairJob.findById(jobId);
   if (session) query = query.session(session);
@@ -49,6 +57,86 @@ const attachInitialEstimate = (
   },
   { new: true, session }
 );
+
+
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// SCRUM-10: Owner/Staff shop-wide repair-job search. The requested query is
+// safely escaped before being used in MongoDB regex conditions.
+const searchForStaff = (queryValue = '', limit = 50) => {
+  const query = String(queryValue || '').trim();
+  const filter = {};
+
+  if (query) {
+    const safeQuery = escapeRegExp(query);
+    const matcher = { $regex: safeQuery, $options: 'i' };
+    filter.$or = [
+      { reference: matcher },
+      { 'customerSnapshot.fullName': matcher },
+      { 'customerSnapshot.contactNumber': matcher }
+    ];
+  }
+
+  return RepairJob.find(filter)
+    .select(
+      'reference customer customerSnapshot deviceType makeModel serialNumber reportedFault receivedAt status assignedTechnician assignedBy assignedAt currentEstimate revision createdAt updatedAt'
+    )
+    .populate(
+      'assignedTechnician',
+      'fullName email contactNumber role isActive isEmailVerified'
+    )
+    .sort({ receivedAt: -1, _id: -1 })
+    .limit(limit);
+};
+
+// SCRUM-10: detailed Owner/Staff view for a selected result.
+const findForStaffDetail = (identifier, { session = null } = {}) => {
+  let query = RepairJob.findOne(identifierFilter(identifier))
+    .populate(
+      'assignedTechnician',
+      'fullName email contactNumber role isActive isEmailVerified'
+    )
+    .populate('assignedBy', 'fullName email role')
+    .populate(
+      'currentEstimate',
+      'versionNumber currency totalMinor status issuedAt decision'
+    );
+
+  if (session) query = query.session(session);
+  return query;
+};
+
+// SCRUM-11: assignment update is guarded by both workflow state and optimistic
+// revision so a Collected/concurrently changed job is never silently overwritten.
+const assignTechnician = (
+  jobId,
+  technicianId,
+  assignedBy,
+  assignedAt,
+  expectedRevision,
+  session
+) => {
+  const revisionFilter = expectedRevision === 0
+    ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+    : { revision: expectedRevision };
+
+  return RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: { $ne: 'Collected' },
+      ...revisionFilter
+    },
+    {
+      $set: {
+        assignedTechnician: technicianId,
+        assignedBy,
+        assignedAt
+      },
+      $inc: { revision: 1 }
+    },
+    { new: true, session }
+  );
+};
 
 // Estimate revision: move currentEstimate to the new version and send the job
 // back to Awaiting Approval. The filter pins the job to the state the service
@@ -112,6 +200,94 @@ const applyProgressUpdate = (
   { returnDocument: 'after' }
 );
 
+// SCRUM-13: atomically begin diagnosis only for the currently assigned
+// technician and only while the repair job is still Received.
+const startDiagnosis = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Received',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Diagnosing',
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId,
+      diagnosisRecordedAt: null,
+      diagnosisRecordedBy: null
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Compatibility path for a job already in Diagnosing (for example an older
+// branch/test record) that has no SCRUM-13 metadata yet.
+const syncDiagnosisStartedMetadata = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Completing the diagnosis records the second diagnosis-state transition but
+// intentionally leaves RepairJob.status as Diagnosing so the already-complete
+// SCRUM-14 estimate flow remains unchanged.
+const markDiagnosisRecorded = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  recordedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosis Recorded',
+      diagnosisRecordedAt: recordedAt,
+      diagnosisRecordedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
 // SCRUM-41: return all jobs assigned to a specific technician, newest first.
 // Only expose the fields needed for the technician list view.
 const findAssignedToTechnician = (technicianId) =>
@@ -144,14 +320,29 @@ const updateStatusForDecision = (
   );
 };
 
+// SCRUM-104: return all repair jobs belonging to the authenticated customer,
+// newest intake first. Only the fields needed for the customer list view are
+// projected — no internal diagnosis or staff-only context is included.
+const findByCustomer = (customerId) =>
+  RepairJob.find({ customer: customerId })
+    .select('reference deviceType makeModel serialNumber status receivedAt currentEstimate')
+    .sort({ receivedAt: -1 });
+
 module.exports = {
   create,
   findByIdempotency,
   findByIdOrReference,
   findByIdForEstimate,
   attachInitialEstimate,
+  searchForStaff,
+  findForStaffDetail,
+  assignTechnician,
   attachRevisedEstimate,
   applyProgressUpdate,
+  startDiagnosis,
+  syncDiagnosisStartedMetadata,
+  markDiagnosisRecorded,
   findAssignedToTechnician,
-  updateStatusForDecision
+  updateStatusForDecision,
+  findByCustomer
 };

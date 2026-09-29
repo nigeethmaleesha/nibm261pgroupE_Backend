@@ -142,12 +142,21 @@ const serializeDraft = (draft, currentEstimate) => {
 };
 
 const getEstimateHistory = async ({ jobIdentifier, actor }) => {
-  assertOwnerStaff(actor);
+  if (!actor || !['owner_staff', 'customer'].includes(actor.role)) {
+    throw createHttpError('Only Owner/Staff or customer can access estimate history', 403, 'FORBIDDEN');
+  }
 
   const job = await loadJob(jobIdentifier);
+
+  if (actor.role === 'customer' && job.customer.toString() !== actor._id.toString()) {
+    throw createHttpError('You are not authorized to view this repair job estimate history', 403, 'FORBIDDEN');
+  }
+
+  const isStaff = actor.role === 'owner_staff';
+
   const [estimates, draft] = await Promise.all([
     estimateRepository.listByJob(job._id),
-    estimateRevisionDraftRepository.findByJob(job._id)
+    isStaff ? estimateRevisionDraftRepository.findByJob(job._id) : null
   ]);
 
   const currentId = job.currentEstimate
@@ -163,9 +172,9 @@ const getEstimateHistory = async ({ jobIdentifier, actor }) => {
   return {
     job: serializeJobSummary(job),
     currentVersionNumber: currentEstimate ? currentEstimate.versionNumber : null,
-    revisionEligibility: revisionEligibilityFor(job, currentEstimate),
-    workAuthorisation: getWorkAuthorisation(job, currentEstimate),
-    draftRevision: serializeDraft(draft, currentEstimate),
+    revisionEligibility: isStaff ? revisionEligibilityFor(job, currentEstimate) : undefined,
+    workAuthorisation: await getWorkAuthorisation(job, currentEstimate),
+    draftRevision: isStaff ? serializeDraft(draft, currentEstimate) : null,
     versions
   };
 };
@@ -286,7 +295,7 @@ const buildIssueResult = async ({ created, estimate, previousEstimate, job, sess
   } : null,
   job: serializeJobSummary(job),
   jobStatus: job.status,
-  workAuthorisation: getWorkAuthorisation(job, estimate)
+  workAuthorisation: await getWorkAuthorisation(job, estimate)
 });
 
 const issueRevisedEstimate = async ({ jobIdentifier, payload = {}, actor }) => {

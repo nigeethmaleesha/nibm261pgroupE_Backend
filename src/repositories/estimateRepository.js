@@ -23,6 +23,15 @@ const findCurrentByJob = (job, options = {}) => (
     : findInitialByJob(job._id, options)
 );
 
+const findLatestApprovedByJob = (jobId, { session = null } = {}) => {
+  let query = Estimate.findOne({
+    job: jobId,
+    $or: [{ status: 'Approved' }, { 'decision.action': 'APPROVED' }]
+  }).sort({ versionNumber: -1 });
+  if (session) query = query.session(session);
+  return query;
+};
+
 const listByJob = (jobId, { session = null } = {}) => {
   let query = Estimate.find({ job: jobId }).sort({ versionNumber: 1 });
   if (session) query = query.session(session);
@@ -92,6 +101,7 @@ module.exports = {
   findInitialByJob,
   findById,
   findCurrentByJob,
+  findLatestApprovedByJob,
   listByJob,
   listItems,
   createEstimate,

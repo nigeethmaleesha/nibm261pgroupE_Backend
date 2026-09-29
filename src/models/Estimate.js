@@ -128,4 +128,8 @@ estimateSchema.index(
   { name: 'estimate_job_issued_idx' }
 );
 
+estimateSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove'], function() {
+  throw new Error('Issued estimate records are immutable and cannot be deleted.');
+});
+
 module.exports = mongoose.model('Estimate', estimateSchema);

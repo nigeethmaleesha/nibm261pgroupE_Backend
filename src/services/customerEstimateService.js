@@ -85,6 +85,44 @@ const getCurrentEstimate = async ({ jobIdentifier, actor }) => {
   );
   const decisionState = getDecisionState({ estimate, isLatest, canDecide });
 
+  let previousItems = [];
+  if (estimate.versionNumber > 1 && estimate.basedOnEstimate) {
+    previousItems = await customerEstimateRepository.listPublicItems(estimate.basedOnEstimate);
+  }
+
+  const previouslyApproved = await customerEstimateRepository.findPreviouslyApproved(
+    job._id,
+    estimate.versionNumber
+  );
+
+  const serializedItems = items.map((item) => {
+    const publicItem = serializePublicItem(item);
+    if (estimate.versionNumber > 1 && previousItems.length > 0) {
+      const match = previousItems.find((prev) =>
+        prev.type === item.type &&
+        prev.description.trim().toLowerCase() === item.description.trim().toLowerCase()
+      );
+      if (!match) {
+        publicItem.changeStatus = 'NEW';
+      } else if (match.quantity !== item.quantity || match.unitPriceMinor !== item.unitPriceMinor) {
+        publicItem.changeStatus = 'MODIFIED';
+      } else {
+        publicItem.changeStatus = 'UNCHANGED';
+      }
+    } else {
+      publicItem.changeStatus = 'UNCHANGED';
+    }
+    return publicItem;
+  });
+
+  const previouslyApprovedEstimate = previouslyApproved ? {
+    versionNumber: previouslyApproved.versionNumber,
+    total: formatMinor(previouslyApproved.totalMinor),
+    totalMinor: previouslyApproved.totalMinor,
+    status: previouslyApproved.status,
+    approvedAt: previouslyApproved.decision?.decidedAt || null
+  } : null;
+
   return {
     job: publicJob,
     hasEstimate: true,
@@ -96,6 +134,7 @@ const getCurrentEstimate = async ({ jobIdentifier, actor }) => {
       isRevision: estimate.versionNumber > 1,
       revisionReason: estimate.versionNumber > 1 ? estimate.changeReason || null : null,
       previousVersionNumber: estimate.versionNumber > 1 ? estimate.versionNumber - 1 : null,
+      previouslyApprovedEstimate,
       currency: estimate.currency,
       totalMinor: estimate.totalMinor,
       total: formatMinor(estimate.totalMinor),
@@ -110,7 +149,7 @@ const getCurrentEstimate = async ({ jobIdentifier, actor }) => {
         decidedAt: estimate.decision.decidedAt
       } : null,
       proposedWork: items.map((item) => item.description),
-      items: items.map(serializePublicItem)
+      items: serializedItems
     }
   };
 };

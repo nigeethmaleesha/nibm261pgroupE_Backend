@@ -214,7 +214,7 @@ const getEstimateContext = async ({ jobIdentifier, actor }) => {
     eligibility,
     revisionEligibility: revisionEligibilityFor(job, latestEstimate),
     hasRevisionDraft: Boolean(revisionDraft),
-    workAuthorisation: getWorkAuthorisation(job, latestEstimate),
+    workAuthorisation: await getWorkAuthorisation(job, latestEstimate),
     currentEstimate
   };
 };
@@ -381,6 +381,11 @@ const recordEstimateDecision = async ({ jobIdentifier, payload = {}, actor }) =>
     throw createHttpError('Only customers can authorize or reject repair estimates', 403, 'FORBIDDEN');
   }
 
+  const rawEstimateId = String(payload.estimateId || payload.estimate_id || '').trim();
+  if (!rawEstimateId) {
+    throw createHttpError('estimateId is required', 422, 'VALIDATION_ERROR');
+  }
+
   const rawAction = String(payload.action || payload.decision || '').trim().toUpperCase();
   let normalizedAction;
   if (['APPROVE', 'APPROVED'].includes(rawAction)) {
@@ -413,6 +418,15 @@ const recordEstimateDecision = async ({ jobIdentifier, payload = {}, actor }) =>
   const currentEstimate = await estimateRepository.findCurrentByJob(job);
   if (!currentEstimate) {
     throw createHttpError('No issued estimate found for this repair job', 404, 'NOT_FOUND');
+  }
+
+  // SCRUM-84: Exact-version check (customer's estimateId must match current estimate)
+  if (rawEstimateId !== currentEstimate._id.toString()) {
+    throw createHttpError(
+      'refresh and review the latest estimate',
+      409,
+      'STALE_ESTIMATE'
+    );
   }
 
   // Idempotency check: If an identical decision was already recorded by the same customer on this estimate
@@ -479,7 +493,10 @@ const recordEstimateDecision = async ({ jobIdentifier, payload = {}, actor }) =>
     }
   }
 
-  const targetJobStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Estimate Rejected';
+  const previouslyApproved = await estimateRepository.findLatestApprovedByJob(job._id);
+  const targetJobStatus = normalizedAction === 'APPROVED'
+    ? 'Approved'
+    : (previouslyApproved ? 'Approved' : 'Estimate Rejected');
   const targetEstimateStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Rejected';
   const decidedAt = new Date();
 

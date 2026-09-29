@@ -1,6 +1,7 @@
 const express = require('express');
 const internalAuthController = require('../controllers/internalAuthController');
 const repairJobController = require('../controllers/repairJobController');
+const diagnosisController = require('../controllers/diagnosisController');
 const repairProgressController = require('../controllers/repairProgressController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -36,6 +37,26 @@ router.get(
   protect,
   authorizeRoles('technician'),
   repairJobController.getMyJob
+);
+
+// SCRUM-13: assigned technician diagnosis workflow.
+router.get(
+  '/jobs/:jobIdentifier/diagnosis',
+  protect,
+  authorizeRoles('technician'),
+  diagnosisController.getTechnicianDiagnosis
+);
+router.post(
+  '/jobs/:jobIdentifier/diagnosis/start',
+  protect,
+  authorizeRoles('technician'),
+  diagnosisController.startDiagnosis
+);
+router.patch(
+  '/jobs/:jobIdentifier/diagnosis',
+  protect,
+  authorizeRoles('technician'),
+  diagnosisController.saveDiagnosis
 );
 
 // Repair progress: assigned technician updates status/notes. Locked with
