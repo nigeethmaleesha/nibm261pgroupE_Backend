@@ -181,11 +181,14 @@ const attachRevisedEstimate = (
 // status, revision and current estimate the service validated. Issuing a
 // revised estimate changes all three (status -> Awaiting Approval), so a
 // progress update that races a revision misses instead of slipping through.
+// `extraFilter` adds save-time rechecks, e.g. start/resume repair requires no
+// active parts hold and that the job is still assigned to the technician.
 const applyProgressUpdate = (
   jobId,
-  { expectedStatus, expectedRevision, expectedEstimateId, set }
+  { expectedStatus, expectedRevision, expectedEstimateId, set, extraFilter = {} }
 ) => RepairJob.findOneAndUpdate(
   {
+    ...extraFilter,
     _id: jobId,
     status: { $eq: expectedStatus, $ne: 'Awaiting Approval' },
     currentEstimate: expectedEstimateId,
@@ -195,6 +198,26 @@ const applyProgressUpdate = (
   },
   {
     $set: set,
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
+// Resolve an active parts hold (parts arrived). Status is left unchanged.
+const releasePartsHold = (jobId, { expectedRevision, releasedAt, releasedBy }) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    'partsHold.active': true,
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      'partsHold.active': false,
+      'partsHold.releasedAt': releasedAt,
+      'partsHold.releasedBy': releasedBy
+    },
     $inc: { revision: 1 }
   },
   { returnDocument: 'after' }
@@ -339,6 +362,7 @@ module.exports = {
   assignTechnician,
   attachRevisedEstimate,
   applyProgressUpdate,
+  releasePartsHold,
   startDiagnosis,
   syncDiagnosisStartedMetadata,
   markDiagnosisRecorded,

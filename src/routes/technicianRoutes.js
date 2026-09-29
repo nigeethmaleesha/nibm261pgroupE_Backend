@@ -74,4 +74,20 @@ router.patch(
   repairProgressController.updateProgress
 );
 
+// Start or resume repair: assigned technician only. Allowed from Approved, or
+// from Waiting for Parts once the parts hold is resolved, and only when the
+// latest estimate version is approved. Rechecked atomically when saving.
+router.post(
+  '/jobs/:jobIdentifier/start-repair',
+  protect,
+  authorizeRoles('technician'),
+  repairProgressController.startRepair
+);
+router.patch(
+  '/jobs/:jobIdentifier/parts-hold/resolve',
+  protect,
+  authorizeRoles('technician'),
+  repairProgressController.resolvePartsHold
+);
+
 module.exports = router;

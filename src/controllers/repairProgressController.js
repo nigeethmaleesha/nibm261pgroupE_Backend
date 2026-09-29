@@ -25,7 +25,35 @@ const getProgressHistory = async (req, res, next) => {
   }
 };
 
+const startRepair = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.startRepair({
+      jobIdentifier: req.params.jobIdentifier,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const resolvePartsHold = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.resolvePartsHold({
+      jobIdentifier: req.params.jobIdentifier,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   updateProgress,
-  getProgressHistory
+  getProgressHistory,
+  startRepair,
+  resolvePartsHold
 };

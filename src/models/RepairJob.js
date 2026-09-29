@@ -42,6 +42,49 @@ const partsHoldSchema = new mongoose.Schema(
     releasedAt: {
       type: Date,
       default: null
+    },
+    releasedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+const repairWorkSchema = new mongoose.Schema(
+  {
+    firstStartedAt: {
+      type: Date,
+      default: null
+    },
+    firstStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    lastAction: {
+      type: String,
+      enum: ['START', 'RESUME', null],
+      default: null
+    },
+    lastStartedAt: {
+      type: Date,
+      default: null
+    },
+    lastStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    approvedEstimate: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null
+    },
+    approvedEstimateVersion: {
+      type: Number,
+      default: null
     }
   },
   { _id: false }
@@ -186,6 +229,13 @@ const repairJobSchema = new mongoose.Schema(
     },
     partsHold: {
       type: partsHoldSchema,
+      default: () => ({})
+    },
+    // Start/resume repair: who moved the job into In Repair, when, and under
+    // which approved estimate version. First start is kept; the last* fields
+    // are overwritten on every start or resume.
+    repairWork: {
+      type: repairWorkSchema,
       default: () => ({})
     },
     // Optimistic revision used when workflow commands change the job state.

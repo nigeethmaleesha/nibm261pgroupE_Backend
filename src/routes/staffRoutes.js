@@ -141,6 +141,13 @@ router.patch(
   authorizeRoles('owner_staff'),
   repairProgressController.updateProgress
 );
+// Parts arrived: resolve the active parts hold so the technician can resume.
+router.patch(
+  '/jobs/:jobIdentifier/parts-hold/resolve',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.resolvePartsHold
+);
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.
 
