@@ -1,6 +1,7 @@
 const express = require('express');
 const customerEstimateController = require('../controllers/customerEstimateController');
 const customerJobController = require('../controllers/customerJobController');
+const diagnosisController = require('../controllers/diagnosisController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -13,6 +14,15 @@ router.get(
   protect,
   authorizeRoles('customer'),
   customerJobController.listMyJobs
+);
+
+// SCRUM-13: public-safe diagnosis summary. The service uses an allow-list
+// serializer so internalNotes/findings/recommendations never reach customers.
+router.get(
+  '/jobs/:jobIdentifier/diagnosis',
+  protect,
+  authorizeRoles('customer'),
+  diagnosisController.getCustomerDiagnosis
 );
 
 // SCRUM-15: customer-only, ownership-checked, public-safe estimate DTO.

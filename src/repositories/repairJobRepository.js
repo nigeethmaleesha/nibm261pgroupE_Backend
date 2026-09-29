@@ -200,6 +200,94 @@ const applyProgressUpdate = (
   { returnDocument: 'after' }
 );
 
+// SCRUM-13: atomically begin diagnosis only for the currently assigned
+// technician and only while the repair job is still Received.
+const startDiagnosis = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Received',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Diagnosing',
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId,
+      diagnosisRecordedAt: null,
+      diagnosisRecordedBy: null
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Compatibility path for a job already in Diagnosing (for example an older
+// branch/test record) that has no SCRUM-13 metadata yet.
+const syncDiagnosisStartedMetadata = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Completing the diagnosis records the second diagnosis-state transition but
+// intentionally leaves RepairJob.status as Diagnosing so the already-complete
+// SCRUM-14 estimate flow remains unchanged.
+const markDiagnosisRecorded = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  recordedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosis Recorded',
+      diagnosisRecordedAt: recordedAt,
+      diagnosisRecordedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
 // SCRUM-41: return all jobs assigned to a specific technician, newest first.
 // Only expose the fields needed for the technician list view.
 const findAssignedToTechnician = (technicianId) =>
@@ -251,6 +339,9 @@ module.exports = {
   assignTechnician,
   attachRevisedEstimate,
   applyProgressUpdate,
+  startDiagnosis,
+  syncDiagnosisStartedMetadata,
+  markDiagnosisRecorded,
   findAssignedToTechnician,
   updateStatusForDecision,
   findByCustomer

@@ -5,6 +5,7 @@ const repairJobController = require('../controllers/repairJobController');
 const estimateController = require('../controllers/estimateController');
 const estimateRevisionController = require('../controllers/estimateRevisionController');
 const repairProgressController = require('../controllers/repairProgressController');
+const diagnosisController = require('../controllers/diagnosisController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -66,6 +67,15 @@ router.patch(
   protect,
   authorizeRoles('owner_staff'),
   repairJobController.assignTechnician
+);
+
+// SCRUM-13: Owner/Staff can read the recorded technical diagnosis, including
+// internal notes. Customer APIs use a separate allow-listed public DTO.
+router.get(
+  '/jobs/:jobIdentifier/diagnosis',
+  protect,
+  authorizeRoles('owner_staff'),
+  diagnosisController.getStaffDiagnosis
 );
 
 // SCRUM-14: Owner/Staff can inspect estimate prerequisites and issue the
