@@ -25,6 +25,13 @@ const estimateSchema = new mongoose.Schema(
       default: null,
       immutable: true
     },
+    // Estimate revision: the version this one replaced. Null for version 1.
+    basedOnEstimate: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null,
+      immutable: true
+    },
     currency: {
       type: String,
       enum: ['LKR'],
@@ -65,6 +72,40 @@ const estimateSchema = new mongoose.Schema(
       required: true,
       immutable: true
     },
+    // 'Superseded' is only used for a version that was replaced by a revision
+    // before the customer decided it. Decided versions keep Approved/Rejected so
+    // the decision history is never rewritten.
+    status: {
+      type: String,
+      enum: ['Issued', 'Approved', 'Rejected', 'Superseded'],
+      default: 'Issued',
+      required: true
+    },
+    supersededBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null
+    },
+    supersededAt: {
+      type: Date,
+      default: null
+    },
+    decision: {
+      action: {
+        type: String,
+        enum: ['APPROVED', 'REJECTED'],
+        default: null
+      },
+      decidedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+      },
+      decidedAt: {
+        type: Date,
+        default: null
+      }
+    },
     requestHash: {
       type: String,
       required: true,
@@ -86,5 +127,9 @@ estimateSchema.index(
   { job: 1, issuedAt: -1 },
   { name: 'estimate_job_issued_idx' }
 );
+
+estimateSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove'], function() {
+  throw new Error('Issued estimate records are immutable and cannot be deleted.');
+});
 
 module.exports = mongoose.model('Estimate', estimateSchema);
