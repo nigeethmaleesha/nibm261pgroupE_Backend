@@ -5,6 +5,7 @@ const repairJobController = require('../controllers/repairJobController');
 const estimateController = require('../controllers/estimateController');
 const estimateRevisionController = require('../controllers/estimateRevisionController');
 const repairProgressController = require('../controllers/repairProgressController');
+const jobProgressLogController = require('../controllers/jobProgressLogController');
 const diagnosisController = require('../controllers/diagnosisController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
@@ -147,6 +148,13 @@ router.patch(
   protect,
   authorizeRoles('owner_staff'),
   repairProgressController.resolvePartsHold
+);
+// Read-only view of technician progress updates (internal + public rows).
+router.get(
+  ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],
+  protect,
+  authorizeRoles('owner_staff'),
+  jobProgressLogController.listProgressUpdates
 );
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.

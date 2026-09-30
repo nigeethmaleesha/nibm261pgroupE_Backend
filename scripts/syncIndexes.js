@@ -8,6 +8,7 @@ const Estimate = require('../src/models/Estimate');
 const EstimateItem = require('../src/models/EstimateItem');
 const EstimateRevisionDraft = require('../src/models/EstimateRevisionDraft');
 const RepairProgressUpdate = require('../src/models/RepairProgressUpdate');
+const JobProgressLog = require('../src/models/JobProgressLog');
 const RepairJobAssignmentAudit = require('../src/models/RepairJobAssignmentAudit');
 const Diagnosis = require('../src/models/Diagnosis');
 
@@ -39,6 +40,9 @@ const syncIndexes = async () => {
     const repairProgressResult = await RepairProgressUpdate.syncIndexes();
     console.log('RepairProgressUpdate indexes synchronized. Removed indexes:', repairProgressResult);
     console.log('RepairProgressUpdate indexes:', await RepairProgressUpdate.collection.indexes());
+    const jobProgressLogResult = await JobProgressLog.syncIndexes();
+    console.log('JobProgressLog indexes synchronized. Removed indexes:', jobProgressLogResult);
+    console.log('JobProgressLog indexes:', await JobProgressLog.collection.indexes());
     console.log('Assignment audit indexes synchronized. Removed indexes:', assignmentAuditResult);
     console.log('Assignment audit indexes:', await RepairJobAssignmentAudit.collection.indexes());
     console.log('Diagnosis indexes synchronized. Removed indexes:', diagnosisResult);

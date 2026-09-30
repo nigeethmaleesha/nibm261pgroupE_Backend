@@ -3,6 +3,7 @@ const internalAuthController = require('../controllers/internalAuthController');
 const repairJobController = require('../controllers/repairJobController');
 const diagnosisController = require('../controllers/diagnosisController');
 const repairProgressController = require('../controllers/repairProgressController');
+const jobProgressLogController = require('../controllers/jobProgressLogController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
 
@@ -88,6 +89,23 @@ router.patch(
   protect,
   authorizeRoles('technician'),
   repairProgressController.resolvePartsHold
+);
+
+// Progress updates while In Repair (job_progress_logs): internal work note
+// (is_public: false) + customer-safe update (is_public: true). Both texts are
+// required. POST needs an Idempotency-Key header; a retry replays the entry.
+// /work-notes is kept as an alias of /progress-updates.
+router.get(
+  ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],
+  protect,
+  authorizeRoles('technician'),
+  jobProgressLogController.listProgressUpdates
+);
+router.post(
+  ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],
+  protect,
+  authorizeRoles('technician'),
+  jobProgressLogController.recordProgressUpdate
 );
 
 module.exports = router;

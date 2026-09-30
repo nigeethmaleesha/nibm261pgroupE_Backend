@@ -85,6 +85,12 @@ const repairWorkSchema = new mongoose.Schema(
     approvedEstimateVersion: {
       type: Number,
       default: null
+    },
+    // Last technician progress update (job_progress_logs). Written in the
+    // same transaction as the log rows so the job state is rechecked at save.
+    lastProgressUpdateAt: {
+      type: Date,
+      default: null
     }
   },
   { _id: false }

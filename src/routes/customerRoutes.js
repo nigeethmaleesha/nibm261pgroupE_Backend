@@ -2,6 +2,7 @@ const express = require('express');
 const customerEstimateController = require('../controllers/customerEstimateController');
 const customerJobController = require('../controllers/customerJobController');
 const diagnosisController = require('../controllers/diagnosisController');
+const jobProgressLogController = require('../controllers/jobProgressLogController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -31,6 +32,15 @@ router.get(
   protect,
   authorizeRoles('customer'),
   customerEstimateController.getCurrentEstimate
+);
+
+// Customer-safe repair progress updates: only job_progress_logs rows with
+// is_public: true are read, through an allow-listed DTO.
+router.get(
+  '/jobs/:jobIdentifier/progress-updates',
+  protect,
+  authorizeRoles('customer'),
+  jobProgressLogController.listCustomerProgressUpdates
 );
 
 module.exports = router;

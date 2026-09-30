@@ -434,5 +434,6 @@ module.exports = {
   updateProgress,
   getProgressHistory,
   startRepair,
-  resolvePartsHold
+  resolvePartsHold,
+  assertNotAwaitingApproval
 };

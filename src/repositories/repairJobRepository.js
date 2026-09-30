@@ -223,6 +223,26 @@ const releasePartsHold = (jobId, { expectedRevision, releasedAt, releasedBy }) =
   { returnDocument: 'after' }
 );
 
+// Save-time recheck for a technician progress update: the job must still be
+// In Repair under the same approved estimate, with no active parts hold, and
+// still assigned to this technician. Does not bump the job revision because a
+// progress update is not a workflow state change.
+const touchProgressLog = (
+  jobId,
+  { technicianId, expectedEstimateId, recordedAt },
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    currentEstimate: expectedEstimateId,
+    assignedTechnician: technicianId,
+    'partsHold.active': { $ne: true }
+  },
+  { $set: { 'repairWork.lastProgressUpdateAt': recordedAt } },
+  { returnDocument: 'after', session }
+);
+
 // SCRUM-13: atomically begin diagnosis only for the currently assigned
 // technician and only while the repair job is still Received.
 const startDiagnosis = (
@@ -363,6 +383,7 @@ module.exports = {
   attachRevisedEstimate,
   applyProgressUpdate,
   releasePartsHold,
+  touchProgressLog,
   startDiagnosis,
   syncDiagnosisStartedMetadata,
   markDiagnosisRecorded,
