@@ -362,11 +362,26 @@ Endpoints under `/api/technician/auth/*` handle technician login, OTP verificati
 
 ---
 
-### 6. Estimates Alias (`/api/jobs`)
+### 6. Customer & Job Estimate Decisions (`/api/jobs`)
 
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :--- | :--- |
+| `GET` | `/api/jobs/:jobIdentifier/estimate` | Bearer (`customer`, `owner_staff`) | Customer/Staff detail view of repair estimate items, version, total, and status |
+| `POST` | `/api/jobs/:jobIdentifier/estimate-decision` | Bearer (`customer`) | Customer approves or rejects initial estimate; updates `Estimate` & `RepairJob` status |
 | `POST` | `/api/jobs/:jobIdentifier/estimates` | Bearer (`owner_staff`) | Jira-compatible endpoint alias for SCRUM-14 estimate issuance |
+
+*Sample Customer Decision Request Body:*
+```json
+{
+  "action": "APPROVE",
+  "versionNumber": 1,
+  "total": "29000.00"
+}
+```
+
+*Decision Action Values:*
+- `"APPROVE"` (or `"APPROVED"`): Updates `Estimate.status` to `Approved` and `RepairJob.status` to `Approved`.
+- `"REJECT"` (or `"REJECTED"`): Updates `Estimate.status` to `Rejected` and `RepairJob.status` to `Estimate Rejected`.
 
 ---
 
@@ -376,6 +391,7 @@ Endpoints under `/api/technician/auth/*` handle technician login, OTP verificati
 | :--- | :--- | :--- |
 | **SCRUM-9** | Repair Job Registration | Intake endpoint `POST /api/staff/jobs`, idempotent replay protection via `Idempotency-Key`, auto-generated reference `JOB-YYYYMM-XXXX`, initial `Received` status. |
 | **SCRUM-14** | Issue Initial Repair Estimate | `POST /api/staff/jobs/:id/estimates` and `/api/jobs/:id/estimates`, checks completed diagnosis prerequisite, immutable versioning, minor-unit money arithmetic. |
+| **Customer Decision** | Customer Estimate Approval / Rejection | `POST /api/jobs/:id/estimate-decision` and `GET /api/jobs/:id/estimate`, records customer identity, estimate version & timestamp, updates `Estimate` & `RepairJob` status concurrently, idempotent replay (200 OK), stale state protection (409 Conflict), strict customer ownership check (403 Forbidden). |
 | **SCRUM-32** | Customer Registration & Email Verification | Public self-registration, 6-digit OTP verification, prevents duplicate active emails. |
 | **SCRUM-33** | Customer Search & Contact Number Indexing | Database index on `contactNumber`, search API for staff intake form (`GET /api/staff/customers`). |
 | **SCRUM-36** | Two-Factor OTP & Password Reset | Time-bounded OTP with brute-force lockout (max 5 tries), resend cooldown (60s), secure password reset tokens. |
@@ -412,8 +428,9 @@ Set the initial/current values for:
 8. `Staff - Estimate Context & Issue (SCRUM-14)` — Estimate context and issuance
 9. `Jobs - Estimate Issue Alias (SCRUM-14 Jira Route)` — Jira alias test
 10. `Staff - Technician Management (SCRUM-44 / SCRUM-45)` — Create tech, verify OTP, toggle active
-11. `Technician - Assigned Jobs (SCRUM-41)` — **New**: List my jobs, get job details, 403 authorization check
-12. `Session Management (Refresh Token)` — Test token rotation & logout
+11. `Technician - Assigned Jobs (SCRUM-41)` — List my jobs, get job details, 403 authorization check
+12. `Customer - Estimate Decision` — Get estimate detail, approve estimate, idempotent replay, reject estimate, 409 stale state check
+13. `Session Management (Refresh Token)` — Test token rotation & logout
 
 ### 4. Testing SCRUM-41 (Technician Assigned Jobs)
 1. Run **Technician Login** or use an existing technician token.

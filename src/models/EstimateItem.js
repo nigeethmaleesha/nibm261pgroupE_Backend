@@ -83,4 +83,8 @@ estimateItemSchema.index(
   { name: 'estimate_item_estimate_idx' }
 );
 
+estimateItemSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove'], function() {
+  throw new Error('Issued estimate line items are immutable and cannot be deleted.');
+});
+
 module.exports = mongoose.model('EstimateItem', estimateItemSchema);

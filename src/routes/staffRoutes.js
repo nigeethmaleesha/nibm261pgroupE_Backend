@@ -3,6 +3,10 @@ const internalAuthController = require('../controllers/internalAuthController');
 const technicianManagementController = require('../controllers/technicianManagementController');
 const repairJobController = require('../controllers/repairJobController');
 const estimateController = require('../controllers/estimateController');
+const estimateRevisionController = require('../controllers/estimateRevisionController');
+const repairProgressController = require('../controllers/repairProgressController');
+const jobProgressLogController = require('../controllers/jobProgressLogController');
+const diagnosisController = require('../controllers/diagnosisController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -44,6 +48,37 @@ router.post(
   repairJobController.createRepairJob
 );
 
+// SCRUM-10: Owner/Staff-only shop-wide repair-job search and selected detail.
+router.get(
+  '/jobs',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.searchStaffJobs
+);
+router.get(
+  '/jobs/:jobIdentifier',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.getStaffJob
+);
+
+// SCRUM-11: staff-route alias used by the admin frontend.
+router.patch(
+  '/jobs/:jobIdentifier/assign',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.assignTechnician
+);
+
+// SCRUM-13: Owner/Staff can read the recorded technical diagnosis, including
+// internal notes. Customer APIs use a separate allow-listed public DTO.
+router.get(
+  '/jobs/:jobIdentifier/diagnosis',
+  protect,
+  authorizeRoles('owner_staff'),
+  diagnosisController.getStaffDiagnosis
+);
+
 // SCRUM-14: Owner/Staff can inspect estimate prerequisites and issue the
 // immutable initial version. `jobIdentifier` accepts either MongoDB _id or the
 // human-readable job reference so this story is testable before SCRUM-10 UI is merged.
@@ -58,6 +93,68 @@ router.post(
   protect,
   authorizeRoles('owner_staff'),
   estimateController.issueInitialEstimate
+);
+
+// Estimate revision: full version history, a single per-job draft that never
+// replaces the current estimate, and issuing a new sequential version.
+router.get(
+  '/jobs/:jobIdentifier/estimates',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.getEstimateHistory
+);
+router.get(
+  '/jobs/:jobIdentifier/estimate-revisions/draft',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.getRevisionDraft
+);
+router.put(
+  '/jobs/:jobIdentifier/estimate-revisions/draft',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.saveRevisionDraft
+);
+router.delete(
+  '/jobs/:jobIdentifier/estimate-revisions/draft',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.discardRevisionDraft
+);
+router.post(
+  '/jobs/:jobIdentifier/estimate-revisions',
+  protect,
+  authorizeRoles('owner_staff'),
+  estimateRevisionController.issueRevisedEstimate
+);
+
+// Repair progress: Owner/Staff view and update status/notes. Locked with
+// 409 REPAIR_LOCKED while the job is Awaiting Approval.
+router.get(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.getProgressHistory
+);
+router.patch(
+  '/jobs/:jobIdentifier/progress',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.updateProgress
+);
+// Parts arrived: resolve the active parts hold so the technician can resume.
+router.patch(
+  '/jobs/:jobIdentifier/parts-hold/resolve',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.resolvePartsHold
+);
+// Read-only view of technician progress updates (internal + public rows).
+router.get(
+  ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],
+  protect,
+  authorizeRoles('owner_staff'),
+  jobProgressLogController.listProgressUpdates
 );
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.
