@@ -5,8 +5,10 @@ const helmet = require('helmet');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const staffRoutes = require('./routes/staffRoutes');
+const jobRoutes = require('./routes/jobRoutes');
 const technicianRoutes = require('./routes/technicianRoutes');
 const internalRoutes = require('./routes/internalRoutes');
+const customerRoutes = require('./routes/customerRoutes');
 const { notFound, errorHandler } = require('./middlewares/errorMiddleware');
 
 const app = express();
@@ -32,13 +34,21 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+app.get('/', (req, res) => res.status(200).json({
+  service: 'RepairFlow API',
+  message: 'This is the RepairFlow backend API. All endpoints are under /api.',
+  health: '/api/health'
+}));
+
 app.get('/api/health', (req, res) => res.status(200).json({
   status: 'ok',
   service: 'RepairFlow API'
 }));
 
 app.use('/api/auth', authRoutes);
+app.use('/api/customer', customerRoutes);
 app.use('/api/staff', staffRoutes);
+app.use('/api/jobs', jobRoutes);
 app.use('/api/technician', technicianRoutes);
 app.use('/api/internal', internalRoutes);
 
