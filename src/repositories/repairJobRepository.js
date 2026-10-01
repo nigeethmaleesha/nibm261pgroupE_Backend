@@ -141,26 +141,14 @@ const assignTechnician = (
 // Estimate revision: move currentEstimate to the new version and send the job
 // back to Awaiting Approval. The filter pins the job to the state the service
 // validated (status, previous estimate and revision) so a concurrent decision or
-// revision makes this update miss instead of overwriting it. An existing parts
-// hold is never cleared here; `partsHold` is only passed to place a new one.
+// revision makes this update miss instead of overwriting it. `partsHold` is not
+// touched here: an active hold stays active and a resolved hold stays resolved.
 const attachRevisedEstimate = (
   jobId,
-  {
-    previousEstimateId,
-    estimateId,
-    expectedStatus,
-    expectedRevision,
-    partsHold = null
-  },
+  { previousEstimateId, estimateId, expectedStatus, expectedRevision },
   session
-) => {
-  const $set = {
-    currentEstimate: estimateId,
-    status: 'Awaiting Approval'
-  };
-  if (partsHold) $set.partsHold = partsHold;
-
-  return RepairJob.findOneAndUpdate(
+) =>
+  RepairJob.findOneAndUpdate(
     {
       _id: jobId,
       status: expectedStatus,
@@ -170,12 +158,14 @@ const attachRevisedEstimate = (
         : { revision: expectedRevision })
     },
     {
-      $set,
+      $set: {
+        currentEstimate: estimateId,
+        status: 'Awaiting Approval'
+      },
       $inc: { revision: 1 }
     },
     { returnDocument: 'after', session }
   );
-};
 
 // Repair progress lock: the update only applies when the job is still in the
 // status, revision and current estimate the service validated. Issuing a
@@ -203,11 +193,46 @@ const applyProgressUpdate = (
   { returnDocument: 'after' }
 );
 
-// Resolve an active parts hold (parts arrived). Status is left unchanged.
-const releasePartsHold = (jobId, { expectedRevision, releasedAt, releasedBy }) => RepairJob.findOneAndUpdate(
+// Place a parts hold atomically. The job must still be In Repair, still be
+// assigned to the same technician, still point at the estimate the service
+// validated, and have no active hold. This prevents a concurrent estimate
+// revision/reassignment from being overwritten by a stale technician screen.
+const placePartsHold = (
+  jobId,
+  { technicianId, expectedRevision, expectedEstimateId, partsHold }
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    assignedTechnician: technicianId,
+    currentEstimate: expectedEstimateId,
+    'partsHold.active': { $ne: true },
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Waiting for Parts',
+      partsHold
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
+// Resolve an active parts hold (parts arrived). Status is intentionally left
+// unchanged: Waiting for Parts must be explicitly resumed, and Awaiting
+// Approval must remain Awaiting Approval until the customer's decision.
+const releasePartsHold = (
+  jobId,
+  { expectedRevision, releasedAt, releasedBy, resolutionNote = null, technicianId = null }
+) => RepairJob.findOneAndUpdate(
   {
     _id: jobId,
     'partsHold.active': true,
+    status: { $nin: ['Ready for Collection', 'Ready for Return', 'Collected'] },
+    ...(technicianId ? { assignedTechnician: technicianId } : {}),
     ...(expectedRevision === 0
       ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
       : { revision: expectedRevision })
@@ -216,7 +241,8 @@ const releasePartsHold = (jobId, { expectedRevision, releasedAt, releasedBy }) =
     $set: {
       'partsHold.active': false,
       'partsHold.releasedAt': releasedAt,
-      'partsHold.releasedBy': releasedBy
+      'partsHold.releasedBy': releasedBy,
+      'partsHold.resolutionNote': resolutionNote
     },
     $inc: { revision: 1 }
   },
@@ -382,6 +408,7 @@ module.exports = {
   assignTechnician,
   attachRevisedEstimate,
   applyProgressUpdate,
+  placePartsHold,
   releasePartsHold,
   touchProgressLog,
   startDiagnosis,

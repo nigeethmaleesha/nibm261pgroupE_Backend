@@ -17,11 +17,9 @@ const { assertRepairWorkAllowed, getWorkAuthorisation } = require('./repairAutho
 // transitions record who started/resumed the repair and under which version.
 const TRANSITIONS = {
   Approved: {
-    'In Repair': { authorisation: 'START', startsRepair: 'START' },
-    'Waiting for Parts': { authorisation: 'REPAIR' }
+    'In Repair': { authorisation: 'START', startsRepair: 'START' }
   },
   'In Repair': {
-    'Waiting for Parts': { authorisation: 'REPAIR' },
     'Ready for Collection': { authorisation: 'COMPLETE' }
   },
   // Resuming needs the parts hold to be resolved first (resolvePartsHold).
@@ -77,6 +75,26 @@ const normalizeNote = (value) => {
     throw createHttpError('note must not exceed 1000 characters', 422, 'VALIDATION_ERROR');
   }
   return note;
+};
+
+const normalizeRequiredText = (value, field, maxLength) => {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    throw createHttpError(`${field} is required`, 422, 'VALIDATION_ERROR');
+  }
+  if (text.length > maxLength) {
+    throw createHttpError(`${field} must not exceed ${maxLength} characters`, 422, 'VALIDATION_ERROR');
+  }
+  return text;
+};
+
+const normalizeOptionalText = (value, field, maxLength) => {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (text.length > maxLength) {
+    throw createHttpError(`${field} must not exceed ${maxLength} characters`, 422, 'VALIDATION_ERROR');
+  }
+  return text;
 };
 
 const normalizeExpectedRevision = (value) => {
@@ -148,10 +166,14 @@ const serializeJob = (job) => ({
   revision: job.revision || 0,
   partsHold: {
     active: Boolean(job.partsHold?.active),
+    requiredPart: job.partsHold?.requiredPart || null,
     reason: job.partsHold?.reason || null,
+    internalNote: job.partsHold?.internalNote || null,
     placedAt: job.partsHold?.placedAt || null,
+    placedBy: job.partsHold?.placedBy || null,
     releasedAt: job.partsHold?.releasedAt || null,
-    releasedBy: job.partsHold?.releasedBy || null
+    releasedBy: job.partsHold?.releasedBy || null,
+    resolutionNote: job.partsHold?.resolutionNote || null
   },
   repairWork: {
     firstStartedAt: job.repairWork?.firstStartedAt || null,
@@ -164,7 +186,7 @@ const serializeJob = (job) => ({
   }
 });
 
-const updateProgress = async ({ jobIdentifier, payload = {}, actor }) => {
+const updateProgress = async ({ jobIdentifier, payload = {}, actor, allowStartTransition = false }) => {
   const requestedStatus = normalizeStatus(payload.status);
   const note = normalizeNote(payload.note);
   const expectedRevision = normalizeExpectedRevision(payload.expectedRevision);
@@ -219,6 +241,17 @@ const updateProgress = async ({ jobIdentifier, payload = {}, actor }) => {
         'FORBIDDEN'
       );
     }
+    // Start/resume is a dedicated workflow command. Do not let the generic
+    // progress endpoint or status dropdown bypass the explicit action.
+    if (rule.startsRepair && !allowStartTransition) {
+      throw createHttpError(
+        rule.startsRepair === 'RESUME'
+          ? 'Use the Resume Work action to return this job to In Repair'
+          : 'Use the Start Repair action to begin repair work',
+        409,
+        'EXPLICIT_REPAIR_ACTION_REQUIRED'
+      );
+    }
   }
 
   const authorisation = rule.authorisation
@@ -227,14 +260,6 @@ const updateProgress = async ({ jobIdentifier, payload = {}, actor }) => {
 
   const now = new Date();
   const set = { status: toStatus };
-  if (toStatus === 'Waiting for Parts' && !job.partsHold?.active) {
-    set.partsHold = {
-      active: true,
-      reason: note || 'Waiting for parts',
-      placedAt: now,
-      releasedAt: null
-    };
-  }
   // Save-time recheck for start/resume: the conditional update also requires
   // no active parts hold and (for technicians) that the job is still assigned
   // to them. Approval changes bump the job revision, so they miss too.
@@ -318,6 +343,7 @@ const getProgressHistory = async ({ jobIdentifier, actor }) => {
     allowedStatuses: job.status === 'Awaiting Approval'
       ? []
       : Object.entries(TRANSITIONS[job.status] || {})
+        .filter(([, rule]) => !rule.startsRepair)
         .filter(([, rule]) => !rule.roles || rule.roles.includes(actor.role))
         .map(([status]) => status),
     updates: updates.map(serializeUpdate)
@@ -372,22 +398,141 @@ const startRepair = async ({ jobIdentifier, payload = {}, actor }) => {
       note: payload.note,
       expectedRevision: payload.expectedRevision
     },
-    actor
+    actor,
+    allowStartTransition: true
   });
 };
 
 // ---------------------------------------------------------------------------
-// Resolve an active parts hold (parts arrived). Owner/Staff or the assigned
-// technician. Does not change the job status; the technician then resumes.
+// Place a parts hold (assigned technician only). A hold can only be created
+// while the job is actively In Repair under the latest approved estimate.
 // ---------------------------------------------------------------------------
 
-const resolvePartsHold = async ({ jobIdentifier, payload = {}, actor }) => {
-  const note = normalizeNote(payload.note);
+const placePartsHold = async ({ jobIdentifier, payload = {}, actor }) => {
+  if (!actor || actor.role !== 'technician') {
+    throw createHttpError('Only the assigned technician can place a parts hold', 403, 'FORBIDDEN');
+  }
+
+  const requiredPart = normalizeRequiredText(
+    payload.requiredPart ?? payload.part ?? payload.partName,
+    'requiredPart',
+    160
+  );
+  const publicReason = normalizeRequiredText(
+    payload.publicReason ?? payload.delayReason ?? payload.reason,
+    'publicReason',
+    500
+  );
+  const internalNote = normalizeOptionalText(payload.internalNote, 'internalNote', 250);
   const expectedRevision = normalizeExpectedRevision(payload.expectedRevision);
 
   const job = await loadJob(jobIdentifier);
   assertActorCanAccessJob(job, actor);
 
+  if (CLOSED_STATUSES.includes(job.status)) {
+    throw createHttpError(
+      `A parts hold cannot be created once the job is ${job.status}`,
+      409,
+      'REPAIR_CLOSED'
+    );
+  }
+  if (job.status !== 'In Repair') {
+    if (job.status === 'Awaiting Approval') await assertNotAwaitingApproval(job);
+    throw createHttpError(
+      `A parts hold can only be created while the job is In Repair (current: ${job.status})`,
+      409,
+      'INVALID_STATUS_TRANSITION'
+    );
+  }
+  if (job.partsHold?.active) {
+    throw createHttpError('This repair job already has an active parts hold', 409, 'PARTS_HOLD_ACTIVE');
+  }
+  if (expectedRevision !== null && expectedRevision !== (job.revision || 0)) {
+    throw createHttpError(
+      'This repair job has changed since you loaded it. Refresh and try again.',
+      409,
+      'STATE_CONFLICT'
+    );
+  }
+
+  const authorisation = await assertRepairWorkAllowed(job, 'REPAIR');
+  const now = new Date();
+  const partsHold = {
+    active: true,
+    requiredPart,
+    reason: publicReason,
+    internalNote,
+    placedAt: now,
+    placedBy: actor._id,
+    releasedAt: null,
+    releasedBy: null,
+    resolutionNote: null
+  };
+
+  const updatedJob = await repairJobRepository.placePartsHold(job._id, {
+    technicianId: actor._id,
+    expectedRevision: job.revision || 0,
+    expectedEstimateId: job.currentEstimate,
+    partsHold
+  });
+
+  if (!updatedJob) {
+    const latest = await repairJobRepository.findByIdOrReference(String(job._id));
+    if (latest?.status === 'Awaiting Approval') await assertNotAwaitingApproval(latest);
+    throw createHttpError(
+      'This repair job changed while the parts hold was being saved. Refresh and try again.',
+      409,
+      'STATE_CONFLICT'
+    );
+  }
+
+  const auditNote = [
+    `Required part: ${requiredPart}`,
+    `Customer reason: ${publicReason}`,
+    internalNote ? `Internal note: ${internalNote}` : null
+  ].filter(Boolean).join(' | ');
+
+  const update = await repairProgressRepository.createUpdate({
+    job: job._id,
+    fromStatus: job.status,
+    toStatus: 'Waiting for Parts',
+    note: auditNote,
+    estimateVersionNumber: authorisation.approvedVersionNumber,
+    updatedBy: actor._id,
+    updatedByRole: actor.role
+  });
+
+  return {
+    message: 'Parts hold placed successfully',
+    job: serializeJob(updatedJob),
+    update: serializeUpdate(update)
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Resolve an active parts hold (parts arrived). Owner/Staff or the assigned
+// technician may resolve it. Status is intentionally unchanged so Waiting for
+// Parts requires an explicit resume and Awaiting Approval remains locked.
+// ---------------------------------------------------------------------------
+
+const resolvePartsHold = async ({ jobIdentifier, payload = {}, actor }) => {
+  const resolutionNote = normalizeOptionalText(
+    payload.resolutionNote ?? payload.note,
+    'resolutionNote',
+    500
+  );
+  const expectedRevision = normalizeExpectedRevision(payload.expectedRevision);
+
+  const job = await loadJob(jobIdentifier);
+  assertActorCanAccessJob(job, actor);
+
+  if (CLOSED_STATUSES.includes(job.status)) {
+    throw createHttpError(
+      `A parts hold cannot be changed once the job is ${job.status}`,
+      409,
+      'REPAIR_CLOSED'
+    );
+  }
   if (!job.partsHold?.active) {
     throw createHttpError('There is no active parts hold on this job', 409, 'STATE_CONFLICT');
   }
@@ -403,7 +548,9 @@ const resolvePartsHold = async ({ jobIdentifier, payload = {}, actor }) => {
   const updatedJob = await repairJobRepository.releasePartsHold(job._id, {
     expectedRevision: job.revision || 0,
     releasedAt: now,
-    releasedBy: actor._id
+    releasedBy: actor._id,
+    resolutionNote,
+    technicianId: actor.role === 'technician' ? actor._id : null
   });
   if (!updatedJob) {
     throw createHttpError(
@@ -417,14 +564,16 @@ const resolvePartsHold = async ({ jobIdentifier, payload = {}, actor }) => {
     job: job._id,
     fromStatus: job.status,
     toStatus: job.status,
-    note: note || 'Parts hold resolved',
+    note: resolutionNote || 'Required parts received; parts hold resolved',
     estimateVersionNumber: null,
     updatedBy: actor._id,
     updatedByRole: actor.role
   });
 
   return {
-    message: 'Parts hold resolved',
+    message: job.status === 'Waiting for Parts'
+      ? 'Parts delay resolved. Use Resume Work to return the job to In Repair.'
+      : 'Parts delay resolved. The current job status was kept unchanged.',
     job: serializeJob(updatedJob),
     update: serializeUpdate(update)
   };
@@ -434,6 +583,7 @@ module.exports = {
   updateProgress,
   getProgressHistory,
   startRepair,
+  placePartsHold,
   resolvePartsHold,
   assertNotAwaitingApproval
 };

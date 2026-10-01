@@ -415,7 +415,16 @@ const listCustomerProgressUpdates = async ({ jobIdentifier, actor }) => {
   return {
     job: {
       reference: job.reference,
-      status: job.status
+      status: job.status,
+      // Customer-safe parts-delay snapshot. Internal technician notes and actor
+      // ids are deliberately excluded from this response.
+      partsHold: {
+        active: Boolean(job.partsHold?.active),
+        requiredPart: job.partsHold?.requiredPart || null,
+        reason: job.partsHold?.reason || null,
+        placedAt: job.partsHold?.placedAt || null,
+        releasedAt: job.partsHold?.releasedAt || null
+      }
     },
     // A corrected entry is replaced by its correction for the customer.
     updates: publicRows

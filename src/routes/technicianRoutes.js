@@ -84,6 +84,23 @@ router.post(
   authorizeRoles('technician'),
   repairProgressController.startRepair
 );
+
+// SCRUM-22 Parts Delay Management. Only the assigned technician can place a
+// hold. Both commands use POST because they are explicit workflow actions.
+router.post(
+  '/jobs/:jobIdentifier/parts-hold',
+  protect,
+  authorizeRoles('technician'),
+  repairProgressController.placePartsHold
+);
+router.post(
+  '/jobs/:jobIdentifier/resolve-parts-hold',
+  protect,
+  authorizeRoles('technician'),
+  repairProgressController.resolvePartsHold
+);
+
+// Backward-compatible alias used by the previous frontend build.
 router.patch(
   '/jobs/:jobIdentifier/parts-hold/resolve',
   protect,

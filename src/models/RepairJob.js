@@ -29,14 +29,34 @@ const partsHoldSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    // Required part/component recorded by the technician when the hold starts.
+    requiredPart: {
+      type: String,
+      trim: true,
+      maxlength: 160,
+      default: null
+    },
+    // Customer-safe delay reason. Customer APIs may expose this field, while
+    // internalNote and actor ids remain internal-only.
     reason: {
       type: String,
       trim: true,
       maxlength: 500,
       default: null
     },
+    internalNote: {
+      type: String,
+      trim: true,
+      maxlength: 250,
+      default: null
+    },
     placedAt: {
       type: Date,
+      default: null
+    },
+    placedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
       default: null
     },
     releasedAt: {
@@ -46,6 +66,12 @@ const partsHoldSchema = new mongoose.Schema(
     releasedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+      default: null
+    },
+    resolutionNote: {
+      type: String,
+      trim: true,
+      maxlength: 500,
       default: null
     }
   },

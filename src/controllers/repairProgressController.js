@@ -38,6 +38,19 @@ const startRepair = async (req, res, next) => {
   }
 };
 
+const placePartsHold = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.placePartsHold({
+      jobIdentifier: req.params.jobIdentifier,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const resolvePartsHold = async (req, res, next) => {
   try {
     const result = await repairProgressService.resolvePartsHold({
@@ -55,5 +68,6 @@ module.exports = {
   updateProgress,
   getProgressHistory,
   startRepair,
+  placePartsHold,
   resolvePartsHold
 };
