@@ -122,6 +122,27 @@ const repairWorkSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const collectionDetailsSchema = new mongoose.Schema(
+  {
+    collectedAt: {
+      type: Date,
+      default: null
+    },
+    outcome: {
+      type: String,
+      enum: ['repaired', 'unrepaired', null],
+      default: null
+    },
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
 const customerSnapshotSchema = new mongoose.Schema(
   {
     fullName: {
@@ -268,6 +289,11 @@ const repairJobSchema = new mongoose.Schema(
     // are overwritten on every start or resume.
     repairWork: {
       type: repairWorkSchema,
+      default: () => ({})
+    },
+    // SCRUM-109: recorded collection time and repaired/unrepaired outcome
+    collectionDetails: {
+      type: collectionDetailsSchema,
       default: () => ({})
     },
     // Optimistic revision used when workflow commands change the job state.

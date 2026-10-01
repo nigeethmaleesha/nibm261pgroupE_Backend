@@ -30,6 +30,13 @@ const TRANSITIONS = {
   // is not repair work, so it needs no approved estimate. Owner/Staff only.
   'Estimate Rejected': {
     'Ready for Return': { authorisation: null, roles: ['owner_staff'] }
+  },
+  // SCRUM-109: Device collected by customer. Owner/Staff handover.
+  'Ready for Collection': {
+    Collected: { authorisation: null, roles: ['owner_staff'] }
+  },
+  'Ready for Return': {
+    Collected: { authorisation: null, roles: ['owner_staff'] }
   }
 };
 
@@ -183,6 +190,11 @@ const serializeJob = (job) => ({
     lastStartedBy: job.repairWork?.lastStartedBy || null,
     approvedEstimateId: job.repairWork?.approvedEstimate || null,
     approvedEstimateVersion: job.repairWork?.approvedEstimateVersion ?? null
+  },
+  collectionDetails: {
+    collectedAt: job.collectionDetails?.collectedAt || null,
+    outcome: job.collectionDetails?.outcome || null,
+    notes: job.collectionDetails?.notes || null
   }
 });
 
@@ -260,6 +272,11 @@ const updateProgress = async ({ jobIdentifier, payload = {}, actor, allowStartTr
 
   const now = new Date();
   const set = { status: toStatus };
+  if (toStatus === 'Collected') {
+    set['collectionDetails.collectedAt'] = now;
+    set['collectionDetails.outcome'] = fromStatus === 'Ready for Collection' ? 'repaired' : 'unrepaired';
+    if (note) set['collectionDetails.notes'] = note;
+  }
   // Save-time recheck for start/resume: the conditional update also requires
   // no active parts hold and (for technicians) that the job is still assigned
   // to them. Approval changes bump the job revision, so they miss too.

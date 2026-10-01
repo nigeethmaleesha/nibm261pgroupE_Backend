@@ -1,6 +1,8 @@
 // SCRUM-104: customer job list controller.
 const repairJobService = require('../services/repairJobService');
 
+const customerTrackingService = require('../services/customerTrackingService');
+
 // GET /api/customer/my-jobs
 // Returns all repair jobs that belong to the authenticated customer.
 // The service layer enforces ownership; the controller only passes the
@@ -17,6 +19,24 @@ const listMyJobs = async (req, res, next) => {
   }
 };
 
+// SCRUM-109: Customer public repair tracking controller.
+// GET /api/customer/jobs/:jobIdentifier/track
+// Returns the latest saved status and chronological dated public events sanitized
+// of internal notes and technician IDs.
+const getJobTracking = async (req, res, next) => {
+  try {
+    const tracking = await customerTrackingService.getJobTracking({
+      jobIdentifier: req.params.jobIdentifier,
+      actor: req.user
+    });
+    return res.status(200).json(tracking);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
-  listMyJobs
+  listMyJobs,
+  getJobTracking,
+  trackJob: getJobTracking
 };

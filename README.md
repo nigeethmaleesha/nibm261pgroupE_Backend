@@ -22,6 +22,7 @@
    - [Staff Portal & Technician Management (`/api/staff`)](#4-staff-portal--technician-management-apistaff)
    - [Technician Portal & Assigned Jobs (`/api/technician`)](#5-technician-portal--assigned-jobs-apitechnician)
    - [Estimates Alias (`/api/jobs`)](#6-estimates-alias-apijobs)
+   - [Customer Public Repair Tracking (`/api/customer/jobs/:id/track`) — SCRUM-109](#7-customer-public-repair-tracking-scrum-109)
 10. [SCRUM Story Implementation Map](#scrum-story-implementation-map)
 11. [Postman Collection & Testing Guide](#postman-collection--testing-guide)
 12. [Team Collaboration & Merging Guidelines](#team-collaboration--merging-guidelines)
@@ -385,6 +386,28 @@ Endpoints under `/api/technician/auth/*` handle technician login, OTP verificati
 
 ---
 
+### 7. Customer Public Repair Tracking (SCRUM-109)
+
+Allows customers to track the latest saved status and chronological dated public events for their repair job. Response is strictly sanitized of internal notes and technician IDs. Multi-tenant customer ownership is enforced (cross-customer queries return 404 Not Found to prevent data leakage).
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/customer/jobs/:jobIdentifier/track` | Bearer (`customer`) | Customer tracking endpoint returning status, chronological public timeline, actions, delay reasons, handover instructions, and collection outcomes |
+| `GET` | `/api/customer/jobs/:jobIdentifier/tracking` | Bearer (`customer`) | Alias for `/api/customer/jobs/:jobIdentifier/track` |
+| `GET` | `/api/jobs/:jobIdentifier/track` | Bearer (`customer`, `owner_staff`) | Jira-compatible route alias for public-safe tracking view |
+| `GET` | `/api/jobs/:jobIdentifier/tracking` | Bearer (`customer`, `owner_staff`) | Jira-compatible route alias |
+
+*Key Features & Acceptance Criteria:*
+- **Chronological Dated Public Events**: Aggregates intake event, diagnosis summary, estimate issuance/decisions, public work progress updates, parts delays, and status transitions sorted in ascending date order.
+- **Awaiting Approval**: Dynamically exposes `actionRequired: true`, `estimateDecision` links (`decisionUrl`, `viewEstimateUrl`) so customer can review and decide directly.
+- **Waiting for Parts**: Displays customer-safe `publicDelayReason` and `partsDelay` without exposing internal supplier notes or staff/tech IDs.
+- **Ready for Collection / Ready for Return**: Displays tailored `handoverInstruction` guide for shop visit and device collection.
+- **Collected**: Displays the recorded `collectionTime` (`collectedAt`) and repaired or unrepaired `outcome` (`'repaired'` | `'unrepaired'`).
+- **Zero-Trust Sanitization**: Internal notes (`job_progress_logs` where `is_public: false`, `Diagnosis.internalNotes`, `Diagnosis.findings`, `partsHold.internalNote`) and actor ObjectIds (`technician`, `updatedBy`, `recordedBy`, `startedBy`) are 100% stripped.
+- **IDOR / Multi-Tenancy Protection**: Customers can only view their own jobs. Querying another customer's job returns `404 NOT_FOUND` (`Repair job not found`).
+
+---
+
 ## SCRUM Story Implementation Map
 
 | Story ID | Title | Implementation Details |
@@ -398,6 +421,8 @@ Endpoints under `/api/technician/auth/*` handle technician login, OTP verificati
 | **SCRUM-41** | Technician View Assigned Repair Jobs | `GET /api/technician/jobs` and `GET /api/technician/jobs/:jobIdentifier`, strict ownership enforcement (403 for other techs' jobs), informative empty state. |
 | **SCRUM-44** | Staff-Guided Technician Onboarding | Owner/Staff creates technicians, verifies OTP directly from Staff Portal, sets initial password. |
 | **SCRUM-45** | Technician Active/Inactive Management | `PATCH /api/staff/technicians/:id/toggle-active`, immediately prevents deactivated technicians from logging in or refreshing tokens. |
+| **SCRUM-104** | Customer Repair Job Listing | `GET /api/customer/my-jobs`, lists all repair jobs owned by the authenticated customer without IDOR risk. |
+| **SCRUM-109** | Customer Public Repair Tracking & History | `GET /api/customer/jobs/:jobIdentifier/track` (and aliases). Returns latest saved status and chronological dated public events sanitized of internal notes and technician IDs. Dynamic estimate decision links for `Awaiting Approval`, public delay reasons for `Waiting for Parts`, handover instructions for `Ready for Collection` / `Ready for Return`, and recorded collection time + outcome for `Collected`. Enforces strict multi-tenant ownership (404 on cross-customer access). |
 
 ---
 
@@ -431,6 +456,7 @@ Set the initial/current values for:
 11. `Technician - Assigned Jobs (SCRUM-41)` — List my jobs, get job details, 403 authorization check
 12. `Customer - Estimate Decision` — Get estimate detail, approve estimate, idempotent replay, reject estimate, 409 stale state check
 13. `Session Management (Refresh Token)` — Test token rotation & logout
+14. `Customer - Public Repair Tracking (SCRUM-109)` — Track job status, chronological timeline, estimate decision link, delay reasons, handover instructions, collection outcome, and 404 IDOR test
 
 ### 4. Testing SCRUM-41 (Technician Assigned Jobs)
 1. Run **Technician Login** or use an existing technician token.
@@ -440,6 +466,17 @@ Set the initial/current values for:
 4. Call `GET /api/technician/jobs`: returns the assigned job with reference, deviceType, reportedFault, and status.
 5. Call `GET /api/technician/jobs/JOB-YYYYMM-XXXX`: returns full technical details.
 6. Call `GET /api/technician/jobs/:unassignedJobId`: returns `403 Forbidden` (`ACCESS_DENIED`).
+
+### 5. Testing SCRUM-109 (Customer Public Repair Tracking)
+1. Log in as a verified customer using `POST /api/auth/login` and verify OTP to establish an authenticated session.
+2. Call `GET /api/customer/jobs/:jobIdentifier/track` (or `/api/jobs/:jobIdentifier/track`):
+   - **Chronological Timeline**: Inspect `publicEvents` array. All public events (intake, diagnosis summary, estimate actions, work logs, status updates) appear sorted by `timestamp` in ascending order.
+   - **Sanitization**: Confirm no `internalNotes`, `findings`, `recommendedWork`, or technician/staff ObjectIds are present in the response body.
+   - **Awaiting Approval**: When job is in `Awaiting Approval`, verify `actionRequired: true` and `estimateDecision.decisionUrl` points to `/api/jobs/:ref/estimate-decision`.
+   - **Waiting for Parts**: When job is in `Waiting for Parts`, verify `publicDelayReason` displays the customer delay reason without internal notes or actor IDs.
+   - **Ready for Collection / Return**: Verify `handoverInstruction` displays appropriate customer instructions for collection or unrepaired return.
+   - **Collected**: Verify `collection.collectedAt` and `collection.outcome` (`'repaired'` or `'unrepaired'`) are accurately reported.
+   - **IDOR Protection**: Attempt to access a job belonging to another customer — verify the response returns `404 NOT_FOUND` (`Repair job not found`).
 
 ---
 

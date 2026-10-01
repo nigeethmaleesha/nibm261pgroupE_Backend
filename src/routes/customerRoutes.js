@@ -43,5 +43,22 @@ router.get(
   jobProgressLogController.listCustomerProgressUpdates
 );
 
+// SCRUM-109: Customer public repair tracking view.
+// Returns latest saved status, chronological dated public events sanitized
+// of internal notes and technician IDs, estimate decision links, delay reasons,
+// handover instructions, and collection timestamps/outcomes.
+router.get(
+  '/jobs/:jobIdentifier/track',
+  protect,
+  authorizeRoles('customer'),
+  customerJobController.getJobTracking
+);
+router.get(
+  '/jobs/:jobIdentifier/tracking',
+  protect,
+  authorizeRoles('customer'),
+  customerJobController.getJobTracking
+);
+
 module.exports = router;
 
