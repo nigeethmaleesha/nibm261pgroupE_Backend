@@ -400,25 +400,18 @@ const issueRevisedEstimate = async ({ jobIdentifier, payload = {}, actor }) => {
         session
       );
 
-      // Waiting for Parts is replaced by Awaiting Approval, so record the parts
-      // hold on the job to keep it active. An existing hold is left untouched.
-      const partsHold = job.status === 'Waiting for Parts' && !job.partsHold?.active
-        ? {
-          active: true,
-          reason: 'Parts were awaited when the estimate was revised',
-          placedAt: issuedAt,
-          releasedAt: null
-        }
-        : null;
-
+      // A revision changes the workflow status to Awaiting Approval, but the
+      // parts-hold flag is independent state and must be preserved exactly.
+      // In particular, Waiting for Parts can still be the status after a hold
+      // was resolved but before the technician explicitly resumes; do not infer
+      // or reactivate a hold from the status string.
       const updatedJob = await repairJobRepository.attachRevisedEstimate(
         job._id,
         {
           previousEstimateId: currentEstimate._id,
           estimateId: estimate._id,
           expectedStatus: job.status,
-          expectedRevision: job.revision || 0,
-          partsHold
+          expectedRevision: job.revision || 0
         },
         session
       );

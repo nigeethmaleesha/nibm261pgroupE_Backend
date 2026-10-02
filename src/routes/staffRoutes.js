@@ -5,6 +5,8 @@ const repairJobController = require('../controllers/repairJobController');
 const estimateController = require('../controllers/estimateController');
 const estimateRevisionController = require('../controllers/estimateRevisionController');
 const repairProgressController = require('../controllers/repairProgressController');
+const jobProgressLogController = require('../controllers/jobProgressLogController');
+const diagnosisController = require('../controllers/diagnosisController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -66,6 +68,15 @@ router.patch(
   protect,
   authorizeRoles('owner_staff'),
   repairJobController.assignTechnician
+);
+
+// SCRUM-13: Owner/Staff can read the recorded technical diagnosis, including
+// internal notes. Customer APIs use a separate allow-listed public DTO.
+router.get(
+  '/jobs/:jobIdentifier/diagnosis',
+  protect,
+  authorizeRoles('owner_staff'),
+  diagnosisController.getStaffDiagnosis
 );
 
 // SCRUM-14: Owner/Staff can inspect estimate prerequisites and issue the
@@ -130,6 +141,20 @@ router.patch(
   protect,
   authorizeRoles('owner_staff'),
   repairProgressController.updateProgress
+);
+// Parts arrived: resolve the active parts hold so the technician can resume.
+router.patch(
+  '/jobs/:jobIdentifier/parts-hold/resolve',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.resolvePartsHold
+);
+// Read-only view of technician progress updates (internal + public rows).
+router.get(
+  ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],
+  protect,
+  authorizeRoles('owner_staff'),
+  jobProgressLogController.listProgressUpdates
 );
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.

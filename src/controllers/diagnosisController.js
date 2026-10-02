@@ -1,8 +1,32 @@
-const repairProgressService = require('../services/repairProgressService');
+const diagnosisService = require('../services/diagnosisService');
 
-const updateProgress = async (req, res, next) => {
+const getTechnicianDiagnosis = async (req, res, next) => {
   try {
-    const result = await repairProgressService.updateProgress({
+    const result = await diagnosisService.getTechnicianDiagnosis({
+      jobIdentifier: req.params.jobIdentifier,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const startDiagnosis = async (req, res, next) => {
+  try {
+    const result = await diagnosisService.startDiagnosis({
+      jobIdentifier: req.params.jobIdentifier,
+      actor: req.user
+    });
+    return res.status(result.started ? 201 : 200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const saveDiagnosis = async (req, res, next) => {
+  try {
+    const result = await diagnosisService.saveDiagnosis({
       jobIdentifier: req.params.jobIdentifier,
       payload: req.body,
       actor: req.user
@@ -13,9 +37,9 @@ const updateProgress = async (req, res, next) => {
   }
 };
 
-const getProgressHistory = async (req, res, next) => {
+const getStaffDiagnosis = async (req, res, next) => {
   try {
-    const result = await repairProgressService.getProgressHistory({
+    const result = await diagnosisService.getStaffDiagnosis({
       jobIdentifier: req.params.jobIdentifier,
       actor: req.user
     });
@@ -25,37 +49,10 @@ const getProgressHistory = async (req, res, next) => {
   }
 };
 
-const startRepair = async (req, res, next) => {
+const getCustomerDiagnosis = async (req, res, next) => {
   try {
-    const result = await repairProgressService.startRepair({
+    const result = await diagnosisService.getCustomerDiagnosis({
       jobIdentifier: req.params.jobIdentifier,
-      payload: req.body,
-      actor: req.user
-    });
-    return res.status(200).json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-const placePartsHold = async (req, res, next) => {
-  try {
-    const result = await repairProgressService.placePartsHold({
-      jobIdentifier: req.params.jobIdentifier,
-      payload: req.body,
-      actor: req.user
-    });
-    return res.status(200).json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-const resolvePartsHold = async (req, res, next) => {
-  try {
-    const result = await repairProgressService.resolvePartsHold({
-      jobIdentifier: req.params.jobIdentifier,
-      payload: req.body,
       actor: req.user
     });
     return res.status(200).json(result);
@@ -65,9 +62,9 @@ const resolvePartsHold = async (req, res, next) => {
 };
 
 module.exports = {
-  updateProgress,
-  getProgressHistory,
-  startRepair,
-  placePartsHold,
-  resolvePartsHold
+  getTechnicianDiagnosis,
+  startDiagnosis,
+  saveDiagnosis,
+  getStaffDiagnosis,
+  getCustomerDiagnosis
 };

@@ -29,18 +29,114 @@ const partsHoldSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    // Required part/component recorded by the technician when the hold starts.
+    requiredPart: {
+      type: String,
+      trim: true,
+      maxlength: 160,
+      default: null
+    },
+    // Customer-safe delay reason. Customer APIs may expose this field, while
+    // internalNote and actor ids remain internal-only.
     reason: {
       type: String,
       trim: true,
       maxlength: 500,
       default: null
     },
+    internalNote: {
+      type: String,
+      trim: true,
+      maxlength: 250,
+      default: null
+    },
     placedAt: {
       type: Date,
       default: null
     },
+    placedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     releasedAt: {
       type: Date,
+      default: null
+    },
+    releasedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    resolutionNote: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+const repairWorkSchema = new mongoose.Schema(
+  {
+    firstStartedAt: {
+      type: Date,
+      default: null
+    },
+    firstStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    lastAction: {
+      type: String,
+      enum: ['START', 'RESUME', null],
+      default: null
+    },
+    lastStartedAt: {
+      type: Date,
+      default: null
+    },
+    lastStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    approvedEstimate: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null
+    },
+    approvedEstimateVersion: {
+      type: Number,
+      default: null
+    },
+    // Last technician progress update (job_progress_logs). Written in the
+    // same transaction as the log rows so the job state is rechecked at save.
+    lastProgressUpdateAt: {
+      type: Date,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+const collectionDetailsSchema = new mongoose.Schema(
+  {
+    collectedAt: {
+      type: Date,
+      default: null
+    },
+    outcome: {
+      type: String,
+      enum: ['repaired', 'unrepaired', null],
+      default: null
+    },
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: 500,
       default: null
     }
   },
@@ -145,6 +241,32 @@ const repairJobSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    // SCRUM-13: diagnosis lifecycle metadata is additive to the existing
+    // repair workflow status. The global status remains `Diagnosing` after
+    // completion so SCRUM-14 estimate issuance keeps its existing contract.
+    diagnosisState: {
+      type: String,
+      enum: ['Not Started', 'Diagnosing', 'Diagnosis Recorded'],
+      default: 'Not Started'
+    },
+    diagnosisStartedAt: {
+      type: Date,
+      default: null
+    },
+    diagnosisStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    diagnosisRecordedAt: {
+      type: Date,
+      default: null
+    },
+    diagnosisRecordedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -160,6 +282,18 @@ const repairJobSchema = new mongoose.Schema(
     },
     partsHold: {
       type: partsHoldSchema,
+      default: () => ({})
+    },
+    // Start/resume repair: who moved the job into In Repair, when, and under
+    // which approved estimate version. First start is kept; the last* fields
+    // are overwritten on every start or resume.
+    repairWork: {
+      type: repairWorkSchema,
+      default: () => ({})
+    },
+    // SCRUM-109: recorded collection time and repaired/unrepaired outcome
+    collectionDetails: {
+      type: collectionDetailsSchema,
       default: () => ({})
     },
     // Optimistic revision used when workflow commands change the job state.

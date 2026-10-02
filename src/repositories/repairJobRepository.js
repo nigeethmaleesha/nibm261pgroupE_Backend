@@ -8,17 +8,24 @@ const findByIdempotency = (createdBy, idempotencyKey) => RepairJob.findOne({
   idempotencyKey
 }).select('+idempotencyKey +requestHash');
 
+
+const findByIdOrReference = (identifier, { session = null } = {}) => {
+  const value = String(identifier || '').trim();
+  const filter = mongoose.isValidObjectId(value)
+    ? { _id: value }
+    : { reference: value.toUpperCase() };
+
+  let query = RepairJob.findOne(filter);
+  if (session) query = query.session(session);
+  return query;
+};
+
+
 const identifierFilter = (identifier) => {
   const value = String(identifier || '').trim();
   return mongoose.isValidObjectId(value)
     ? { _id: value }
     : { reference: value.toUpperCase() };
-};
-
-const findByIdOrReference = (identifier, { session = null } = {}) => {
-  let query = RepairJob.findOne(identifierFilter(identifier));
-  if (session) query = query.session(session);
-  return query;
 };
 
 const findByIdForEstimate = (jobId, { session = null } = {}) => {
@@ -51,27 +58,7 @@ const attachInitialEstimate = (
   { new: true, session }
 );
 
-// Estimate revision: move currentEstimate to the new version and send the job
-// back to Awaiting Approval. The filter pins the job to the state the service
-// validated (status, previous estimate and revision) so a concurrent decision or
-// revision makes this update miss instead of overwriting it. An existing parts
-// hold is never cleared here; `partsHold` is only passed to place a new one.
-const attachRevisedEstimate = (
-  jobId,
-  {
-    previousEstimateId,
-    estimateId,
-    expectedStatus,
-    expectedRevision,
-    partsHold = null
-  },
-  session
-) => {
-  const $set = {
-    currentEstimate: estimateId,
-    status: 'Awaiting Approval'
-  };
-  if (partsHold) $set.partsHold = partsHold;
+
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // SCRUM-10: Owner/Staff shop-wide repair-job search. The requested query is
@@ -136,43 +123,6 @@ const assignTechnician = (
   return RepairJob.findOneAndUpdate(
     {
       _id: jobId,
-      status: expectedStatus,
-      currentEstimate: previousEstimateId,
-      ...(expectedRevision === 0
-        ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
-        : { revision: expectedRevision })
-    },
-    {
-      $set,
-      $inc: { revision: 1 }
-    },
-    { returnDocument: 'after', session }
-  );
-};
-
-// Repair progress lock: the update only applies when the job is still in the
-// status, revision and current estimate the service validated. Issuing a
-// revised estimate changes all three (status -> Awaiting Approval), so a
-// progress update that races a revision misses instead of slipping through.
-const applyProgressUpdate = (
-  jobId,
-  { expectedStatus, expectedRevision, expectedEstimateId, set }
-) => RepairJob.findOneAndUpdate(
-  {
-    _id: jobId,
-    status: { $eq: expectedStatus, $ne: 'Awaiting Approval' },
-    currentEstimate: expectedEstimateId,
-    ...(expectedRevision === 0
-      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
-      : { revision: expectedRevision })
-  },
-  {
-    $set: set,
-    $inc: { revision: 1 }
-  },
-  { returnDocument: 'after' }
-);
-
       status: { $ne: 'Collected' },
       ...revisionFilter
     },
@@ -187,6 +137,226 @@ const applyProgressUpdate = (
     { new: true, session }
   );
 };
+
+// Estimate revision: move currentEstimate to the new version and send the job
+// back to Awaiting Approval. The filter pins the job to the state the service
+// validated (status, previous estimate and revision) so a concurrent decision or
+// revision makes this update miss instead of overwriting it. `partsHold` is not
+// touched here: an active hold stays active and a resolved hold stays resolved.
+const attachRevisedEstimate = (
+  jobId,
+  { previousEstimateId, estimateId, expectedStatus, expectedRevision },
+  session
+) =>
+  RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: expectedStatus,
+      currentEstimate: previousEstimateId,
+      ...(expectedRevision === 0
+        ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+        : { revision: expectedRevision })
+    },
+    {
+      $set: {
+        currentEstimate: estimateId,
+        status: 'Awaiting Approval'
+      },
+      $inc: { revision: 1 }
+    },
+    { returnDocument: 'after', session }
+  );
+
+// Repair progress lock: the update only applies when the job is still in the
+// status, revision and current estimate the service validated. Issuing a
+// revised estimate changes all three (status -> Awaiting Approval), so a
+// progress update that races a revision misses instead of slipping through.
+// `extraFilter` adds save-time rechecks, e.g. start/resume repair requires no
+// active parts hold and that the job is still assigned to the technician.
+const applyProgressUpdate = (
+  jobId,
+  { expectedStatus, expectedRevision, expectedEstimateId, set, extraFilter = {} }
+) => RepairJob.findOneAndUpdate(
+  {
+    ...extraFilter,
+    _id: jobId,
+    status: { $eq: expectedStatus, $ne: 'Awaiting Approval' },
+    currentEstimate: expectedEstimateId,
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: set,
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
+
+// Place a parts hold atomically. The job must still be In Repair, still be
+// assigned to the same technician, still point at the estimate the service
+// validated, and have no active hold. This prevents a concurrent estimate
+// revision/reassignment from being overwritten by a stale technician screen.
+const placePartsHold = (
+  jobId,
+  { technicianId, expectedRevision, expectedEstimateId, partsHold }
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    assignedTechnician: technicianId,
+    currentEstimate: expectedEstimateId,
+    'partsHold.active': { $ne: true },
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Waiting for Parts',
+      partsHold
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
+// Resolve an active parts hold (parts arrived). Status is intentionally left
+// unchanged: Waiting for Parts must be explicitly resumed, and Awaiting
+// Approval must remain Awaiting Approval until the customer's decision.
+const releasePartsHold = (
+  jobId,
+  { expectedRevision, releasedAt, releasedBy, resolutionNote = null, technicianId = null }
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    'partsHold.active': true,
+    status: { $nin: ['Ready for Collection', 'Ready for Return', 'Collected'] },
+    ...(technicianId ? { assignedTechnician: technicianId } : {}),
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      'partsHold.active': false,
+      'partsHold.releasedAt': releasedAt,
+      'partsHold.releasedBy': releasedBy,
+      'partsHold.resolutionNote': resolutionNote
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
+// Save-time recheck for a technician progress update: the job must still be
+// In Repair under the same approved estimate, with no active parts hold, and
+// still assigned to this technician. Does not bump the job revision because a
+// progress update is not a workflow state change.
+const touchProgressLog = (
+  jobId,
+  { technicianId, expectedEstimateId, recordedAt },
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    currentEstimate: expectedEstimateId,
+    assignedTechnician: technicianId,
+    'partsHold.active': { $ne: true }
+  },
+  { $set: { 'repairWork.lastProgressUpdateAt': recordedAt } },
+  { returnDocument: 'after', session }
+);
+
+// SCRUM-13: atomically begin diagnosis only for the currently assigned
+// technician and only while the repair job is still Received.
+const startDiagnosis = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Received',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Diagnosing',
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId,
+      diagnosisRecordedAt: null,
+      diagnosisRecordedBy: null
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Compatibility path for a job already in Diagnosing (for example an older
+// branch/test record) that has no SCRUM-13 metadata yet.
+const syncDiagnosisStartedMetadata = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Completing the diagnosis records the second diagnosis-state transition but
+// intentionally leaves RepairJob.status as Diagnosing so the already-complete
+// SCRUM-14 estimate flow remains unchanged.
+const markDiagnosisRecorded = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  recordedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosis Recorded',
+      diagnosisRecordedAt: recordedAt,
+      diagnosisRecordedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
 
 // SCRUM-41: return all jobs assigned to a specific technician, newest first.
 // Only expose the fields needed for the technician list view.
@@ -234,14 +404,18 @@ module.exports = {
   findByIdOrReference,
   findByIdForEstimate,
   attachInitialEstimate,
-  attachRevisedEstimate,
-  applyProgressUpdate,
-  findAssignedToTechnician,
-  updateStatusForDecision,
-  findByCustomer
   searchForStaff,
   findForStaffDetail,
   assignTechnician,
+  attachRevisedEstimate,
+  applyProgressUpdate,
+  placePartsHold,
+  releasePartsHold,
+  touchProgressLog,
+  startDiagnosis,
+  syncDiagnosisStartedMetadata,
+  markDiagnosisRecorded,
   findAssignedToTechnician,
-  updateStatusForDecision
+  updateStatusForDecision,
+  findByCustomer
 };

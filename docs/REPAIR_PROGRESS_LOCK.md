@@ -58,16 +58,16 @@ Example locked response:
 
 | From | To | Rule |
 |---|---|---|
-| `Approved` | `In Repair` | Latest estimate approved. Blocked with `409 PARTS_HOLD_ACTIVE` if a parts hold is active. |
+| `Approved` | `In Repair` | Start repair. Latest estimate approved and no active parts hold (`409 PARTS_HOLD_ACTIVE`). Records `repairWork`. |
 | `Approved` | `Waiting for Parts` | Latest estimate approved |
 | `In Repair` | `Waiting for Parts` | Places a parts hold (reason = note) |
-| `Waiting for Parts` | `In Repair` | Releases the parts hold |
+| `Waiting for Parts` | `In Repair` | Resume repair. The parts hold must be resolved first. Records `repairWork`. |
 | `In Repair` | `Ready for Collection` | Completion: latest estimate approved **and** no active parts hold |
 | `Estimate Rejected` | `Ready for Return` | Owner/Staff only. Device returned unrepaired, so no approval needed. |
 
 Anything else returns `409 INVALID_STATUS_TRANSITION` with `details.allowedStatuses`. Notes without a status change are allowed in `Approved`, `In Repair` and `Waiting for Parts`.
 
-A parts hold that was active when a revision was issued stays active. After the customer approves, move the job to `Waiting for Parts` and then to `In Repair` when the parts arrive.
+A parts hold that was active when a revision was issued stays active. When the parts arrive, resolve the hold with `PATCH .../parts-hold/resolve`, then the technician starts or resumes repair. See [START_RESUME_REPAIR.md](START_RESUME_REPAIR.md).
 
 ## Database
 

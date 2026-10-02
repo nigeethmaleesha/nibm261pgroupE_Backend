@@ -8,7 +8,9 @@ const Estimate = require('../src/models/Estimate');
 const EstimateItem = require('../src/models/EstimateItem');
 const EstimateRevisionDraft = require('../src/models/EstimateRevisionDraft');
 const RepairProgressUpdate = require('../src/models/RepairProgressUpdate');
+const JobProgressLog = require('../src/models/JobProgressLog');
 const RepairJobAssignmentAudit = require('../src/models/RepairJobAssignmentAudit');
+const Diagnosis = require('../src/models/Diagnosis');
 
 const syncIndexes = async () => {
   try {
@@ -21,6 +23,7 @@ const syncIndexes = async () => {
     const estimateItemResult = await EstimateItem.syncIndexes();
     const estimateRevisionDraftResult = await EstimateRevisionDraft.syncIndexes();
     const assignmentAuditResult = await RepairJobAssignmentAudit.syncIndexes();
+    const diagnosisResult = await Diagnosis.syncIndexes();
 
     console.log('User indexes synchronized. Removed indexes:', userResult);
     console.log('User indexes:', await User.collection.indexes());
@@ -37,8 +40,13 @@ const syncIndexes = async () => {
     const repairProgressResult = await RepairProgressUpdate.syncIndexes();
     console.log('RepairProgressUpdate indexes synchronized. Removed indexes:', repairProgressResult);
     console.log('RepairProgressUpdate indexes:', await RepairProgressUpdate.collection.indexes());
+    const jobProgressLogResult = await JobProgressLog.syncIndexes();
+    console.log('JobProgressLog indexes synchronized. Removed indexes:', jobProgressLogResult);
+    console.log('JobProgressLog indexes:', await JobProgressLog.collection.indexes());
     console.log('Assignment audit indexes synchronized. Removed indexes:', assignmentAuditResult);
     console.log('Assignment audit indexes:', await RepairJobAssignmentAudit.collection.indexes());
+    console.log('Diagnosis indexes synchronized. Removed indexes:', diagnosisResult);
+    console.log('Diagnosis indexes:', await Diagnosis.collection.indexes());
   } catch (error) {
     console.error('Index synchronization failed:', error.message);
     process.exitCode = 1;

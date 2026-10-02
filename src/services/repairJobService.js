@@ -2,9 +2,9 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const repairJobRepository = require('../repositories/repairJobRepository');
 const userRepository = require('../repositories/userRepository');
+const repairJobAssignmentAuditRepository = require('../repositories/repairJobAssignmentAuditRepository');
 const estimateRepository = require('../repositories/estimateRepository');
 const { getWorkAuthorisation } = require('./repairAuthorisationService');
-const repairJobAssignmentAuditRepository = require('../repositories/repairJobAssignmentAuditRepository');
 const { generateJobReference } = require('../utils/jobReference');
 
 const MAX_REFERENCE_ATTEMPTS = 8;
