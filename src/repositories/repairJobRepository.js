@@ -398,6 +398,81 @@ const findByCustomer = (customerId) =>
     .select('reference deviceType makeModel serialNumber status receivedAt currentEstimate')
     .sort({ receivedAt: -1 });
 
+// SCRUM-25 / SCRUM-113: Complete repair and move status to Ready for Collection.
+// Rechecks atomically that the job is In Repair, assigned to this technician,
+// matches the approved estimate and revision, and has no active parts hold.
+const completeRepairJob = (
+  jobId,
+  {
+    technicianId,
+    expectedRevision,
+    expectedEstimateId,
+    completionDetails,
+    completedAt
+  },
+  session = null
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    assignedTechnician: technicianId,
+    currentEstimate: expectedEstimateId,
+    'partsHold.active': { $ne: true },
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Ready for Collection',
+      completionDetails: {
+        ...completionDetails,
+        completedAt,
+        completedBy: technicianId
+      }
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after', session }
+);
+
+// SCRUM-26 / SCRUM-116: Owner/Staff marks a declined or unrepairable device Ready for Return.
+// Releases any active parts hold, records return reason, and updates status.
+const markJobReadyForReturn = (
+  jobId,
+  {
+    staffId,
+    expectedRevision,
+    returnDetails,
+    returnedAt
+  },
+  session = null
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: { $nin: ['Ready for Return', 'Ready for Collection', 'Collected'] },
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Ready for Return',
+      'partsHold.active': false,
+      'partsHold.releasedAt': returnedAt,
+      'partsHold.releasedBy': staffId,
+      'partsHold.resolutionNote': 'Parts hold ended due to unrepaired return',
+      returnDetails: {
+        ...returnDetails,
+        returnedAt,
+        returnedBy: staffId
+      }
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after', session }
+);
+
 module.exports = {
   create,
   findByIdempotency,
@@ -417,5 +492,7 @@ module.exports = {
   markDiagnosisRecorded,
   findAssignedToTechnician,
   updateStatusForDecision,
-  findByCustomer
+  findByCustomer,
+  completeRepairJob,
+  markJobReadyForReturn
 };

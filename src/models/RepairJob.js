@@ -143,6 +143,76 @@ const collectionDetailsSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// SCRUM-25 / SCRUM-113: QC completion checks & handover metadata.
+const completionDetailsSchema = new mongoose.Schema(
+  {
+    completedAt: {
+      type: Date,
+      default: null
+    },
+    completedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    faultResolved: {
+      type: Boolean,
+      default: false
+    },
+    functionalTestPassed: {
+      type: Boolean,
+      default: false
+    },
+    functionalTestNotes: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null
+    },
+    customerSummary: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null
+    },
+    internalNotes: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+// SCRUM-26 / SCRUM-116: Unrepaired return readiness details.
+const returnDetailsSchema = new mongoose.Schema(
+  {
+    returnedAt: {
+      type: Date,
+      default: null
+    },
+    returnedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    reason: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: null
+    },
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
 const customerSnapshotSchema = new mongoose.Schema(
   {
     fullName: {
@@ -294,6 +364,16 @@ const repairJobSchema = new mongoose.Schema(
     // SCRUM-109: recorded collection time and repaired/unrepaired outcome
     collectionDetails: {
       type: collectionDetailsSchema,
+      default: () => ({})
+    },
+    // SCRUM-25 / SCRUM-113: QC completion checks & handover metadata
+    completionDetails: {
+      type: completionDetailsSchema,
+      default: () => ({})
+    },
+    // SCRUM-26 / SCRUM-116: Unrepaired return details
+    returnDetails: {
+      type: returnDetailsSchema,
       default: () => ({})
     },
     // Optimistic revision used when workflow commands change the job state.

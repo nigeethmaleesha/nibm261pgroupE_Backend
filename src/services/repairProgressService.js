@@ -1,6 +1,8 @@
 const repairJobRepository = require('../repositories/repairJobRepository');
 const repairProgressRepository = require('../repositories/repairProgressRepository');
 const estimateRepository = require('../repositories/estimateRepository');
+const estimateRevisionDraftRepository = require('../repositories/estimateRevisionDraftRepository');
+const emailService = require('./emailService');
 const { JOB_STATUSES } = require('../models/RepairJob');
 const { assertRepairWorkAllowed, getWorkAuthorisation } = require('./repairAuthorisationService');
 
@@ -171,6 +173,9 @@ const serializeJob = (job) => ({
   reference: job.reference,
   status: job.status,
   revision: job.revision || 0,
+  deviceType: job.deviceType || null,
+  makeModel: job.makeModel || null,
+  reportedFault: job.reportedFault || null,
   partsHold: {
     active: Boolean(job.partsHold?.active),
     requiredPart: job.partsHold?.requiredPart || null,
@@ -195,6 +200,21 @@ const serializeJob = (job) => ({
     collectedAt: job.collectionDetails?.collectedAt || null,
     outcome: job.collectionDetails?.outcome || null,
     notes: job.collectionDetails?.notes || null
+  },
+  completionDetails: {
+    completedAt: job.completionDetails?.completedAt || null,
+    completedBy: job.completionDetails?.completedBy || null,
+    faultResolved: Boolean(job.completionDetails?.faultResolved),
+    functionalTestPassed: Boolean(job.completionDetails?.functionalTestPassed),
+    functionalTestNotes: job.completionDetails?.functionalTestNotes || null,
+    customerSummary: job.completionDetails?.customerSummary || null,
+    internalNotes: job.completionDetails?.internalNotes || null
+  },
+  returnDetails: {
+    returnedAt: job.returnDetails?.returnedAt || null,
+    returnedBy: job.returnDetails?.returnedBy || null,
+    reason: job.returnDetails?.reason || null,
+    notes: job.returnDetails?.notes || null
   }
 });
 
@@ -596,11 +616,231 @@ const resolvePartsHold = async ({ jobIdentifier, payload = {}, actor }) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// SCRUM-25 / SCRUM-112 / SCRUM-113: Complete repair & QC checklist
+// ---------------------------------------------------------------------------
+
+const completeRepair = async ({ jobIdentifier, payload = {}, actor }) => {
+  if (!actor || actor.role !== 'technician') {
+    throw createHttpError('Only the assigned technician can complete a repair', 403, 'FORBIDDEN');
+  }
+
+  const job = await loadJob(jobIdentifier);
+  assertActorCanAccessJob(job, actor);
+  await assertNotAwaitingApproval(job);
+
+  if (job.status !== 'In Repair') {
+    throw createHttpError(
+      `Repair can only be completed when the job is In Repair (current: ${job.status})`,
+      409,
+      'INVALID_STATUS'
+    );
+  }
+
+  if (job.partsHold?.active) {
+    throw createHttpError(
+      'An unresolved parts hold is active. Resolve the parts hold before completing repair.',
+      409,
+      'PARTS_HOLD_ACTIVE'
+    );
+  }
+
+  const authorisation = await assertRepairWorkAllowed(job, 'COMPLETE');
+
+  // SCRUM-112: verify all required QC flags are true
+  if (payload.faultResolved !== true) {
+    throw createHttpError(
+      'You must confirm that the reported fault has been resolved',
+      422,
+      'QC_CHECK_FAILED'
+    );
+  }
+
+  if (payload.functionalTestPassed !== true) {
+    throw createHttpError(
+      'You must confirm that functional testing has passed',
+      422,
+      'QC_CHECK_FAILED'
+    );
+  }
+
+  const functionalTestNotes = normalizeRequiredText(
+    payload.functionalTestNotes,
+    'Functional test notes',
+    2000
+  );
+
+  const customerSummary = normalizeRequiredText(
+    payload.customerSummary || payload.publicMessage,
+    'Customer completion summary',
+    2000
+  );
+
+  const internalNotes = normalizeOptionalText(payload.internalNotes, 'Internal notes', 2000);
+  const expectedRevision = normalizeExpectedRevision(payload.expectedRevision);
+  const completedAt = new Date();
+
+  const updatedJob = await repairJobRepository.completeRepairJob(
+    job._id,
+    {
+      technicianId: actor._id,
+      expectedRevision: expectedRevision !== null ? expectedRevision : (job.revision || 0),
+      expectedEstimateId: job.currentEstimate,
+      completionDetails: {
+        faultResolved: true,
+        functionalTestPassed: true,
+        functionalTestNotes,
+        customerSummary,
+        internalNotes
+      },
+      completedAt
+    }
+  );
+
+  if (!updatedJob) {
+    const latest = await repairJobRepository.findByIdOrReference(String(job._id));
+    if (latest) await assertNotAwaitingApproval(latest);
+    throw createHttpError(
+      'This repair job changed while your completion was being saved. Refresh and try again.',
+      409,
+      'STATE_CONFLICT'
+    );
+  }
+
+  // Create progress update record
+  const update = await repairProgressRepository.createUpdate({
+    job: job._id,
+    fromStatus: 'In Repair',
+    toStatus: 'Ready for Collection',
+    note: `Repair completed and quality tested. ${customerSummary}`,
+    estimateVersionNumber: authorisation ? authorisation.approvedVersionNumber : null,
+    updatedBy: actor._id,
+    updatedByRole: actor.role
+  });
+
+  // SCRUM-113: Dispatch customer notification trigger
+  try {
+    if (updatedJob.customerSnapshot?.email) {
+      await emailService.sendRepairCompletedEmail({
+        email: updatedJob.customerSnapshot.email,
+        customerName: updatedJob.customerSnapshot.fullName,
+        reference: updatedJob.reference,
+        deviceModel: updatedJob.makeModel,
+        summary: customerSummary
+      });
+    }
+  } catch (notifError) {
+    console.warn('[Completion Notification] Email notification trigger failed:', notifError.message);
+  }
+
+  return {
+    success: true,
+    message: 'Repair completed successfully. Device is now Ready for Collection.',
+    job: serializeJob(updatedJob),
+    update: serializeUpdate(update)
+  };
+};
+
+// ---------------------------------------------------------------------------
+// SCRUM-26 / SCRUM-116: Owner/Staff marks an unrepairable or declined device Ready for Return.
+// Releases any active parts hold, cancels pending drafts, and updates status.
+// ---------------------------------------------------------------------------
+
+const markReadyForReturn = async ({ jobIdentifier, payload = {}, actor }) => {
+  if (!actor || actor.role !== 'owner_staff') {
+    throw createHttpError('Only Owner/Staff can mark a job ready for return', 403, 'FORBIDDEN');
+  }
+
+  const job = await loadJob(jobIdentifier);
+  assertActorCanAccessJob(job, actor);
+
+  if (CLOSED_STATUSES.includes(job.status)) {
+    throw createHttpError(
+      `Job is already ${job.status} and cannot be marked ready for return`,
+      409,
+      'REPAIR_CLOSED'
+    );
+  }
+
+  const returnReason = normalizeRequiredText(
+    payload.returnReason || payload.reason,
+    'Return reason',
+    200
+  );
+  const notes = normalizeOptionalText(payload.notes || payload.returnNotes, 'Return notes', 2000);
+  const expectedRevision = normalizeExpectedRevision(payload.expectedRevision);
+  const returnedAt = new Date();
+
+  // Cancel any pending revision draft
+  try {
+    await estimateRevisionDraftRepository.deleteByJob(job._id);
+  } catch (_) {
+    // ignore if no draft
+  }
+
+  const updatedJob = await repairJobRepository.markJobReadyForReturn(
+    job._id,
+    {
+      staffId: actor._id,
+      expectedRevision: expectedRevision !== null ? expectedRevision : (job.revision || 0),
+      returnDetails: {
+        reason: returnReason,
+        notes
+      },
+      returnedAt
+    }
+  );
+
+  if (!updatedJob) {
+    throw createHttpError(
+      'This repair job changed while being marked ready for return. Refresh and try again.',
+      409,
+      'STATE_CONFLICT'
+    );
+  }
+
+  // Create progress update record
+  const update = await repairProgressRepository.createUpdate({
+    job: job._id,
+    fromStatus: job.status,
+    toStatus: 'Ready for Return',
+    note: `Device marked ready for return unrepaired. Reason: ${returnReason}${notes ? ` - ${notes}` : ''}`,
+    estimateVersionNumber: null,
+    updatedBy: actor._id,
+    updatedByRole: actor.role
+  });
+
+  // Dispatch customer notification email
+  try {
+    if (updatedJob.customerSnapshot?.email) {
+      await emailService.sendRepairReadyForReturnEmail({
+        email: updatedJob.customerSnapshot.email,
+        customerName: updatedJob.customerSnapshot.fullName,
+        reference: updatedJob.reference,
+        deviceModel: updatedJob.makeModel,
+        reason: returnReason,
+        notes
+      });
+    }
+  } catch (notifErr) {
+    console.warn('[Return Notification] Email notification trigger failed:', notifErr.message);
+  }
+
+  return {
+    success: true,
+    message: 'Device is now Ready for Return (unrepaired). Customer notified.',
+    job: serializeJob(updatedJob),
+    update: serializeUpdate(update)
+  };
+};
+
 module.exports = {
   updateProgress,
   getProgressHistory,
   startRepair,
   placePartsHold,
   resolvePartsHold,
+  completeRepair,
+  markReadyForReturn,
   assertNotAwaitingApproval
 };

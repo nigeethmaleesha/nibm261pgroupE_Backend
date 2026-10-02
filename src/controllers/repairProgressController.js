@@ -64,10 +64,38 @@ const resolvePartsHold = async (req, res, next) => {
   }
 };
 
+const completeRepair = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.completeRepair({
+      jobIdentifier: req.params.jobIdentifier || req.params.id,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const markReadyForReturn = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.markReadyForReturn({
+      jobIdentifier: req.params.jobIdentifier || req.params.id,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   updateProgress,
   getProgressHistory,
   startRepair,
   placePartsHold,
-  resolvePartsHold
+  resolvePartsHold,
+  completeRepair,
+  markReadyForReturn
 };
