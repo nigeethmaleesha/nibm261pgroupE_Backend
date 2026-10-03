@@ -7,6 +7,7 @@ const estimateRevisionController = require('../controllers/estimateRevisionContr
 const repairProgressController = require('../controllers/repairProgressController');
 const jobProgressLogController = require('../controllers/jobProgressLogController');
 const diagnosisController = require('../controllers/diagnosisController');
+const staffArchiveController = require('../controllers/staffArchiveController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -55,6 +56,21 @@ router.get(
   authorizeRoles('owner_staff'),
   repairJobController.searchStaffJobs
 );
+
+// SCRUM-29 / SCRUM-129: Staff Closed/Archived Job Records & Dossier Audit View
+router.get(
+  '/jobs/archived',
+  protect,
+  authorizeRoles('owner_staff'),
+  staffArchiveController.searchArchivedJobs
+);
+router.get(
+  ['/jobs/archived/:jobIdentifier', '/jobs/archived/:id'],
+  protect,
+  authorizeRoles('owner_staff'),
+  staffArchiveController.getArchivedJobDetail
+);
+
 router.get(
   '/jobs/:jobIdentifier',
   protect,

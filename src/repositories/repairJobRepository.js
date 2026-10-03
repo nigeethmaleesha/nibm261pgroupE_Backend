@@ -522,6 +522,164 @@ const recordHandover = (
   );
 };
 
+// SCRUM-29 / SCRUM-129: Staff Closed/Archived Jobs Search with filters for outcome and date range.
+const searchArchivedForStaff = ({
+  queryValue = '',
+  startDate = null,
+  endDate = null,
+  outcome = null,
+  limit = 50,
+  skip = 0
+} = {}) => {
+  const filter = { status: 'Collected' };
+
+  // Text search across reference, customer name, phone, email, make/model
+  const query = String(queryValue || '').trim();
+  if (query) {
+    const safeQuery = escapeRegExp(query);
+    const matcher = { $regex: safeQuery, $options: 'i' };
+    filter.$or = [
+      { reference: matcher },
+      { 'customerSnapshot.fullName': matcher },
+      { 'customerSnapshot.contactNumber': matcher },
+      { 'customerSnapshot.email': matcher },
+      { makeModel: matcher }
+    ];
+  }
+
+  // Outcome filter ('repaired' vs 'unrepaired')
+  if (outcome) {
+    const safeOutcome = String(outcome).trim().toLowerCase();
+    if (safeOutcome === 'repaired') {
+      filter['collectionDetails.outcome'] = { $in: ['repaired', 'Repaired'] };
+    } else if (safeOutcome === 'unrepaired') {
+      filter['collectionDetails.outcome'] = { $in: ['unrepaired', 'Unrepaired'] };
+    }
+  }
+
+  // Date range filter on collectionDetails.collectedAt
+  if (startDate || endDate) {
+    const dateFilter = {};
+    if (startDate) {
+      const parsedStart = new Date(startDate);
+      if (!Number.isNaN(parsedStart.getTime())) {
+        dateFilter.$gte = parsedStart;
+      }
+    }
+    if (endDate) {
+      const parsedEnd = new Date(endDate);
+      if (!Number.isNaN(parsedEnd.getTime())) {
+        if (typeof endDate === 'string' && endDate.length <= 10) {
+          parsedEnd.setUTCHours(23, 59, 59, 999);
+        }
+        dateFilter.$lte = parsedEnd;
+      }
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { 'collectionDetails.collectedAt': dateFilter },
+          {
+            'collectionDetails.collectedAt': null,
+            updatedAt: dateFilter
+          }
+        ]
+      });
+    }
+  }
+
+  return RepairJob.find(filter)
+    .populate('assignedTechnician', 'fullName email contactNumber role isActive isEmailVerified')
+    .populate('assignedBy', 'fullName email role')
+    .populate('collectionDetails.collectedBy', 'fullName email role')
+    .populate('completionDetails.completedBy', 'fullName email role')
+    .populate('returnDetails.returnedBy', 'fullName email role')
+    .sort({ 'collectionDetails.collectedAt': -1, updatedAt: -1, _id: -1 })
+    .skip(skip)
+    .limit(limit);
+};
+
+// SCRUM-29 / SCRUM-129: Count archived jobs matching filters for pagination
+const countArchivedForStaff = ({
+  queryValue = '',
+  startDate = null,
+  endDate = null,
+  outcome = null
+} = {}) => {
+  const filter = { status: 'Collected' };
+
+  const query = String(queryValue || '').trim();
+  if (query) {
+    const safeQuery = escapeRegExp(query);
+    const matcher = { $regex: safeQuery, $options: 'i' };
+    filter.$or = [
+      { reference: matcher },
+      { 'customerSnapshot.fullName': matcher },
+      { 'customerSnapshot.contactNumber': matcher },
+      { 'customerSnapshot.email': matcher },
+      { makeModel: matcher }
+    ];
+  }
+
+  if (outcome) {
+    const safeOutcome = String(outcome).trim().toLowerCase();
+    if (safeOutcome === 'repaired') {
+      filter['collectionDetails.outcome'] = { $in: ['repaired', 'Repaired'] };
+    } else if (safeOutcome === 'unrepaired') {
+      filter['collectionDetails.outcome'] = { $in: ['unrepaired', 'Unrepaired'] };
+    }
+  }
+
+  if (startDate || endDate) {
+    const dateFilter = {};
+    if (startDate) {
+      const parsedStart = new Date(startDate);
+      if (!Number.isNaN(parsedStart.getTime())) {
+        dateFilter.$gte = parsedStart;
+      }
+    }
+    if (endDate) {
+      const parsedEnd = new Date(endDate);
+      if (!Number.isNaN(parsedEnd.getTime())) {
+        if (typeof endDate === 'string' && endDate.length <= 10) {
+          parsedEnd.setUTCHours(23, 59, 59, 999);
+        }
+        dateFilter.$lte = parsedEnd;
+      }
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { 'collectionDetails.collectedAt': dateFilter },
+          {
+            'collectionDetails.collectedAt': null,
+            updatedAt: dateFilter
+          }
+        ]
+      });
+    }
+  }
+
+  return RepairJob.countDocuments(filter);
+};
+
+// SCRUM-29 / SCRUM-129: Full archived job detail for Staff Dossier
+const findArchivedDetailForStaff = (identifier, { session = null } = {}) => {
+  let query = RepairJob.findOne(identifierFilter(identifier))
+    .populate('assignedTechnician', 'fullName email contactNumber role isActive isEmailVerified')
+    .populate('assignedBy', 'fullName email role')
+    .populate('collectionDetails.collectedBy', 'fullName email role')
+    .populate('completionDetails.completedBy', 'fullName email role')
+    .populate('returnDetails.returnedBy', 'fullName email role')
+    .populate('createdBy', 'fullName email role')
+    .populate('currentEstimate');
+
+  if (session) query = query.session(session);
+  return query;
+};
+
 module.exports = {
   create,
   findByIdempotency,
@@ -545,5 +703,8 @@ module.exports = {
   findCompletedByCustomer,
   completeRepairJob,
   markJobReadyForReturn,
-  recordHandover
+  recordHandover,
+  searchArchivedForStaff,
+  countArchivedForStaff,
+  findArchivedDetailForStaff
 };
