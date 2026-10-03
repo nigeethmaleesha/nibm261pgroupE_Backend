@@ -270,6 +270,30 @@ const serializeStaffJobDetail = (job) => ({
     assignedBy: serializeInternalUser(job.assignedBy),
     assignedAt: job.assignedAt || null
   },
+  partsHold: {
+    active: Boolean(job.partsHold?.active),
+    requiredPart: job.partsHold?.requiredPart || null,
+    reason: job.partsHold?.reason || null,
+    internalNote: job.partsHold?.internalNote || null,
+    placedAt: job.partsHold?.placedAt || null,
+    releasedAt: job.partsHold?.releasedAt || null,
+    resolutionNote: job.partsHold?.resolutionNote || null
+  },
+  completionDetails: {
+    completedAt: job.completionDetails?.completedAt || null,
+    completedBy: job.completionDetails?.completedBy || null,
+    faultResolved: Boolean(job.completionDetails?.faultResolved),
+    functionalTestPassed: Boolean(job.completionDetails?.functionalTestPassed),
+    functionalTestNotes: job.completionDetails?.functionalTestNotes || null,
+    customerSummary: job.completionDetails?.customerSummary || null,
+    internalNotes: job.completionDetails?.internalNotes || null
+  },
+  returnDetails: {
+    returnedAt: job.returnDetails?.returnedAt || null,
+    returnedBy: job.returnDetails?.returnedBy || null,
+    reason: job.returnDetails?.reason || null,
+    notes: job.returnDetails?.notes || null
+  },
   currentEstimate: job.currentEstimate && job.currentEstimate._id
     ? {
         id: job.currentEstimate._id,

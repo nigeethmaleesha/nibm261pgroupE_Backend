@@ -25,7 +25,6 @@ router.get(
   authorizeRoles('customer'),
   diagnosisController.getCustomerDiagnosis
 );
-
 // SCRUM-15: customer-only, ownership-checked, public-safe estimate DTO.
 router.get(
   '/jobs/:jobIdentifier/current-estimate',

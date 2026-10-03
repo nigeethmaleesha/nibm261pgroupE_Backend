@@ -1,7 +1,6 @@
 const repairJobRepository = require('../repositories/repairJobRepository');
 const estimateRepository = require('../repositories/estimateRepository');
 const { REVISION_BLOCKED_STATUSES } = require('../models/RepairJob');
-
 /*
  * Repair authorisation rules shared by the estimate, progress and start/resume
  * repair APIs. Repair work is authorised only by the LATEST issued estimate

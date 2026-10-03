@@ -38,8 +38,6 @@ router.post(
   authorizeRoles('owner_staff'),
   estimateRevisionController.issueRevisedEstimate
 );
-
-
 // SCRUM-11 Jira endpoint: Owner/Staff assigns or reassigns a technician.
 // This aliases the staff route while preserving the exact Jira path.
 router.patch(
@@ -69,6 +67,14 @@ router.get(
   protect,
   authorizeRoles('customer', 'owner_staff'),
   customerJobController.getJobTracking
+);
+
+// Customer estimate context endpoint.
+router.get(
+  '/:jobIdentifier/estimate',
+  protect,
+  authorizeRoles('customer', 'owner_staff'),
+  estimateController.getEstimateContext
 );
 
 module.exports = router;

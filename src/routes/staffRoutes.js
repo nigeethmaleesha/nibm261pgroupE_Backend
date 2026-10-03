@@ -149,6 +149,14 @@ router.patch(
   authorizeRoles('owner_staff'),
   repairProgressController.resolvePartsHold
 );
+
+// SCRUM-26 / SCRUM-116: Owner/Staff marks device ready for return unrepaired
+router.post(
+  ['/jobs/:jobIdentifier/ready-for-return', '/jobs/:id/ready-for-return'],
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.markReadyForReturn
+);
 // Read-only view of technician progress updates (internal + public rows).
 router.get(
   ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],

@@ -22,7 +22,8 @@ const getHandoverInstruction = (job) => {
     return `Your device repair has been completed and quality tested. It is ready for collection at our service centre. Please bring your repair reference (${job.reference}) and a valid photo ID to collect your device. Any balance due can be settled upon collection.`;
   }
   if (job.status === 'Ready for Return') {
-    return `Your device is ready for return unrepaired. Please visit our service centre with your repair reference (${job.reference}) and a valid photo ID to collect your device.`;
+    const reasonText = job.returnDetails?.reason ? ` (Reason: ${job.returnDetails.reason})` : '';
+    return `Your device is ready for return unrepaired${reasonText}. Please visit our service centre with your repair reference (${job.reference}) and a valid photo ID to collect your device.`;
   }
   return null;
 };
@@ -168,11 +169,14 @@ const buildPublicEvents = ({
         break;
       case 'Ready for Collection':
         title = 'Ready for Collection';
-        description = 'Repair completed and quality tested. Device is ready for customer collection.';
+        description = job.completionDetails?.customerSummary
+          || 'Repair completed and quality tested. Device is ready for customer collection.';
         break;
       case 'Ready for Return':
         title = 'Ready for Return';
-        description = 'Device is prepared and ready for customer return unrepaired.';
+        description = job.returnDetails?.reason
+          ? `Device is prepared and ready for customer return unrepaired (${job.returnDetails.reason}).`
+          : 'Device is prepared and ready for customer return unrepaired.';
         break;
       case 'Collected':
         title = 'Device Collected';
@@ -332,6 +336,11 @@ const getJobTracking = async ({ jobIdentifier, actor }) => {
     publicDelayReason,
     partsDelay,
     handoverInstruction,
+    returnDetails: {
+      returnedAt: job.returnDetails?.returnedAt || null,
+      reason: job.returnDetails?.reason || null,
+      notes: job.returnDetails?.notes || null
+    },
     collection,
     collectedAt,
     collectionTime,

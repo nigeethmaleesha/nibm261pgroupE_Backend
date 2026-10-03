@@ -108,6 +108,15 @@ router.patch(
   repairProgressController.resolvePartsHold
 );
 
+// SCRUM-25 / SCRUM-112: Assigned technician completes repair with Quality Control checks.
+// Also supports :id for Jira specification alias POST /api/technician/jobs/:id/complete.
+router.post(
+  ['/jobs/:jobIdentifier/complete', '/jobs/:id/complete'],
+  protect,
+  authorizeRoles('technician'),
+  repairProgressController.completeRepair
+);
+
 // Progress updates while In Repair (job_progress_logs): internal work note
 // (is_public: false) + customer-safe update (is_public: true). Both texts are
 // required. POST needs an Idempotency-Key header; a retry replays the entry.
