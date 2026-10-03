@@ -135,4 +135,12 @@ jobProgressLogSchema.index(
   }
 );
 
+// SCRUM-120: Technician work progress logs are immutable and read-only.
+jobProgressLogSchema.pre(
+  ['deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove', 'updateOne', 'updateMany', 'findOneAndUpdate'],
+  function () {
+    throw new Error('Technician work progress logs are immutable and read-only.');
+  }
+);
+
 module.exports = mongoose.model('JobProgressLog', jobProgressLogSchema);

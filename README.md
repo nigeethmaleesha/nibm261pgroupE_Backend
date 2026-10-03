@@ -23,6 +23,7 @@
    - [Technician Portal & Assigned Jobs (`/api/technician`)](#5-technician-portal--assigned-jobs-apitechnician)
    - [Estimates Alias (`/api/jobs`)](#6-estimates-alias-apijobs)
    - [Customer Public Repair Tracking (`/api/customer/jobs/:id/track`) — SCRUM-109](#7-customer-public-repair-tracking-scrum-109)
+   - [Staff Customer Device Handover (`/api/staff/jobs/:id/handover`) — SCRUM-120](#8-staff-customer-device-handover-scrum-120)
 10. [SCRUM Story Implementation Map](#scrum-story-implementation-map)
 11. [Postman Collection & Testing Guide](#postman-collection--testing-guide)
 12. [Team Collaboration & Merging Guidelines](#team-collaboration--merging-guidelines)
@@ -167,6 +168,7 @@ The server will boot on `http://localhost:5000`.
 | `npm run db:sync-indexes` | `node scripts/syncIndexes.js` | Connects to Mongo Atlas and syncs all indexes |
 | `npm run email:check` | `node scripts/checkEmailConfig.js` | Tests SMTP connection using `.env` credentials |
 | `npm run estimate:test-data` | `node scripts/prepareEstimateTestData.js <jobId>` | Prepares a test diagnosis for an existing job (SCRUM-14 testing) |
+| `npm run handover:test` | `node scripts/testDeviceHandover.js` | Runs automated test suite for SCRUM-120 Customer Device Handover & Immutability |
 
 ---
 
@@ -408,6 +410,36 @@ Allows customers to track the latest saved status and chronological dated public
 
 ---
 
+### 8. Staff Customer Device Handover (SCRUM-120)
+
+Allows Owner/Staff to record the final physical handover of a device back to its customer once repair or inspection is complete. Transitions status to `Collected`, records staff member ID, collection timestamp, customer identity verification, device handover confirmation, and outcome (`Repaired` or `Unrepaired`). Enforces service-layer and database-level immutability triggers on `Collected` jobs and their audit history.
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/staff/jobs/:id/handover` | Bearer (`owner_staff`) | Records customer handover setting status to `Collected` with timestamp and outcome |
+| `POST` | `/api/staff/jobs/:jobIdentifier/handover` | Bearer (`owner_staff`) | Alias accepting human-readable reference (e.g. `JOB-202610-0001`) |
+| `POST` | `/api/jobs/:jobIdentifier/handover` | Bearer (`owner_staff`) | Jira-compatible endpoint alias |
+
+*Sample Handover Request Body:*
+```json
+{
+  "customerIdentityConfirmed": true,
+  "deviceHandedOver": true,
+  "notes": "Customer presented National Identity Card and settled repair payment."
+}
+```
+
+*Key Acceptance Criteria & Guarantees:*
+- **Ready State Requirement**: Handover is strictly allowed only when job is in `Ready for Collection` or `Ready for Return`. Attempting handover from any other status returns `409 Conflict` (`INVALID_STATUS`).
+- **Confirmation Verification**: Requires explicit verification of customer identity (`customerIdentityConfirmed: true`) and device handover (`deviceHandedOver: true`), returning `422 Unprocessable Entity` if either is missing or false.
+- **Traceable Outcome**: Sets outcome to `'repaired'` for jobs that were `Ready for Collection`, or `'unrepaired'` for jobs that were `Ready for Return`.
+- **Traceable Attribution**: Persists `collectedAt` timestamp, `collectedBy` staff ObjectId, and optional notes in `collectionDetails`.
+- **Idempotent Replay**: Repeating the handover request on an already `Collected` job returns `200 OK` with the existing job state (`alreadyCollected: true`) without creating duplicate progress update events.
+- **Role-Based Access Control**: Non-staff actors (customers, technicians) are strictly rejected with `403 Forbidden`.
+- **Database Trigger & Immutability (`[DB]`)**: Mongoose triggers (`pre('save')`, `pre('updateOne')`, `pre('findOneAndUpdate')`, `pre('deleteOne')`) and history hooks make `Collected` repair jobs, estimates, and progress updates strictly read-only and immutable against post-collection tampering.
+
+---
+
 ## SCRUM Story Implementation Map
 
 | Story ID | Title | Implementation Details |
@@ -423,6 +455,7 @@ Allows customers to track the latest saved status and chronological dated public
 | **SCRUM-45** | Technician Active/Inactive Management | `PATCH /api/staff/technicians/:id/toggle-active`, immediately prevents deactivated technicians from logging in or refreshing tokens. |
 | **SCRUM-104** | Customer Repair Job Listing | `GET /api/customer/my-jobs`, lists all repair jobs owned by the authenticated customer without IDOR risk. |
 | **SCRUM-109** | Customer Public Repair Tracking & History | `GET /api/customer/jobs/:jobIdentifier/track` (and aliases). Returns latest saved status and chronological dated public events sanitized of internal notes and technician IDs. Dynamic estimate decision links for `Awaiting Approval`, public delay reasons for `Waiting for Parts`, handover instructions for `Ready for Collection` / `Ready for Return`, and recorded collection time + outcome for `Collected`. Enforces strict multi-tenant ownership (404 on cross-customer access). |
+| **SCRUM-120** | Customer Device Handover & Collected Immutability | `POST /api/staff/jobs/:id/handover` (and aliases). Transitions `Ready for Collection` or `Ready for Return` jobs to `Collected`, records staff member (`collectedBy`), collection timestamp (`collectedAt`), and outcome (`Repaired` or `Unrepaired`). Enforces customer identity verification and physical handover confirmation flags. Idempotent replay returns existing result without new events. Database triggers and service-layer locks render `Collected` jobs and history immutable. |
 
 ---
 
@@ -457,6 +490,7 @@ Set the initial/current values for:
 12. `Customer - Estimate Decision` — Get estimate detail, approve estimate, idempotent replay, reject estimate, 409 stale state check
 13. `Session Management (Refresh Token)` — Test token rotation & logout
 14. `Customer - Public Repair Tracking (SCRUM-109)` — Track job status, chronological timeline, estimate decision link, delay reasons, handover instructions, collection outcome, and 404 IDOR test
+15. `Staff - Customer Device Handover (SCRUM-120)` — Handover for Repaired & Unrepaired jobs, idempotent replay, confirmation validation, 409 conflict on non-ready jobs, and 403 role checks
 
 ### 4. Testing SCRUM-41 (Technician Assigned Jobs)
 1. Run **Technician Login** or use an existing technician token.
@@ -477,6 +511,35 @@ Set the initial/current values for:
    - **Ready for Collection / Return**: Verify `handoverInstruction` displays appropriate customer instructions for collection or unrepaired return.
    - **Collected**: Verify `collection.collectedAt` and `collection.outcome` (`'repaired'` or `'unrepaired'`) are accurately reported.
    - **IDOR Protection**: Attempt to access a job belonging to another customer — verify the response returns `404 NOT_FOUND` (`Repair job not found`).
+
+### 6. Testing SCRUM-120 (Staff Customer Device Handover & Collected Immutability)
+1. Log in as an Owner/Staff member using `POST /api/staff/auth/login` and verify OTP.
+2. Ensure test job is in `Ready for Collection` (after technician repair completion) or `Ready for Return` (unrepaired).
+3. Call `POST /api/staff/jobs/:id/handover` with:
+   ```json
+   {
+     "customerIdentityConfirmed": true,
+     "deviceHandedOver": true,
+     "notes": "ID verified with driving license."
+   }
+   ```
+4. Verify response:
+   - Status transitions to `Collected`.
+   - `collectionDetails.collectedAt` captures current timestamp.
+   - `collectionDetails.collectedBy` records acting staff member ObjectId.
+   - `collectionDetails.outcome` is `'repaired'` (if previously Ready for Collection) or `'unrepaired'` (if previously Ready for Return).
+   - An audit trail progress update is appended to `repair_progress_updates`.
+5. Repeat the identical request:
+   - Returns `200 OK` with existing Collected job and `alreadyCollected: true` without creating another progress update event.
+6. Test refusal cases:
+   - Attempt handover without `customerIdentityConfirmed: true` -> returns `422 Unprocessable Entity`.
+   - Attempt handover on an `In Repair` or `Received` job -> returns `409 Conflict` (`INVALID_STATUS`).
+   - Attempt handover using customer or technician token -> returns `403 Forbidden`.
+   - Attempt modifying or deleting a `Collected` job -> database triggers and service-layer locks reject mutation with `409 REPAIR_CLOSED`.
+7. Run the automated test suite anytime via:
+   ```bash
+   npm run handover:test
+   ```
 
 ---
 

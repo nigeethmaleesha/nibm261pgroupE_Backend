@@ -198,6 +198,9 @@ const serializeJob = (job) => ({
   },
   collectionDetails: {
     collectedAt: job.collectionDetails?.collectedAt || null,
+    collectedBy: job.collectionDetails?.collectedBy || null,
+    customerIdentityConfirmed: Boolean(job.collectionDetails?.customerIdentityConfirmed),
+    deviceHandedOver: Boolean(job.collectionDetails?.deviceHandedOver),
     outcome: job.collectionDetails?.outcome || null,
     notes: job.collectionDetails?.notes || null
   },
@@ -834,6 +837,148 @@ const markReadyForReturn = async ({ jobIdentifier, payload = {}, actor }) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// SCRUM-120: Owner/Staff records customer device handover.
+// Transitions status to Collected, records staff member, collection timestamp,
+// customer identity verification, device handover confirmation, and outcome:
+// - Repaired (for Ready for Collection)
+// - Unrepaired (for Ready for Return)
+// Idempotent: Repeating a handover request on an already Collected job returns
+// the existing state without creating another collection event.
+// Refuses non-ready states (409) and unauthorized roles (403).
+// ---------------------------------------------------------------------------
+
+const recordHandover = async ({ jobIdentifier, payload = {}, actor }) => {
+  if (!actor || actor.role !== 'owner_staff') {
+    throw createHttpError('Only Owner/Staff can record device handover', 403, 'FORBIDDEN');
+  }
+
+  const job = await loadJob(jobIdentifier);
+  assertActorCanAccessJob(job, actor);
+
+  // Idempotency: repeating the same handover request returns existing result without another event
+  if (job.status === 'Collected') {
+    return {
+      success: true,
+      message: 'Device handover has already been recorded for this repair job.',
+      job: serializeJob(job),
+      alreadyCollected: true
+    };
+  }
+
+  // Refuse if not in a ready state
+  const allowedReadyStatuses = ['Ready for Collection', 'Ready for Return'];
+  if (!allowedReadyStatuses.includes(job.status)) {
+    throw createHttpError(
+      `Handover can only be recorded when the job is Ready for Collection or Ready for Return (current: ${job.status})`,
+      409,
+      'INVALID_STATUS',
+      { currentStatus: job.status, allowedStatuses: allowedReadyStatuses }
+    );
+  }
+
+  // Confirm linked customer's identity
+  const identityConfirmed = Boolean(
+    payload.customerIdentityConfirmed === true ||
+    payload.identityConfirmed === true ||
+    payload.customerConfirmed === true
+  );
+  if (!identityConfirmed) {
+    throw createHttpError(
+      "You must confirm the customer's identity before completing handover",
+      422,
+      'VALIDATION_ERROR'
+    );
+  }
+
+  // Confirm device handed over
+  const deviceHandedOver = Boolean(
+    payload.deviceHandedOver === true ||
+    payload.confirmHandover === true ||
+    payload.handedOver === true
+  );
+  if (!deviceHandedOver) {
+    throw createHttpError(
+      'You must confirm that the device has been handed over to the customer',
+      422,
+      'VALIDATION_ERROR'
+    );
+  }
+
+  const notes = normalizeOptionalText(payload.notes || payload.collectionNotes, 'Handover notes', 500);
+  const expectedRevision = normalizeExpectedRevision(payload.expectedRevision);
+
+  // Outcome: Repaired for Ready for Collection, Unrepaired for Ready for Return
+  const outcome = job.status === 'Ready for Collection' ? 'repaired' : 'unrepaired';
+  const displayOutcome = outcome === 'repaired' ? 'Repaired' : 'Unrepaired';
+  const collectedAt = new Date();
+
+  // Cancel any pending revision draft
+  try {
+    await estimateRevisionDraftRepository.deleteByJob(job._id);
+  } catch (_) {
+    // ignore
+  }
+
+  const updatedJob = await repairJobRepository.recordHandover(
+    job._id,
+    {
+      staffId: actor._id,
+      outcome,
+      notes,
+      collectedAt,
+      customerIdentityConfirmed: true,
+      deviceHandedOver: true,
+      expectedRevision: expectedRevision !== null ? expectedRevision : (job.revision || 0)
+    }
+  );
+
+  if (!updatedJob) {
+    throw createHttpError(
+      'This repair job changed while handover was being recorded. Refresh and try again.',
+      409,
+      'STATE_CONFLICT'
+    );
+  }
+
+  // Audit trail: create progress update entry
+  const update = await repairProgressRepository.createUpdate({
+    job: job._id,
+    fromStatus: job.status,
+    toStatus: 'Collected',
+    note: notes
+      ? `Device collected by customer (${displayOutcome}). Notes: ${notes}`
+      : `Device collected by customer (${displayOutcome}). Customer identity and device handover verified.`,
+    estimateVersionNumber: job.repairWork?.approvedEstimateVersion || null,
+    updatedBy: actor._id,
+    updatedByRole: actor.role
+  });
+
+  // Dispatch customer handover confirmation email
+  try {
+    if (updatedJob.customerSnapshot?.email) {
+      await emailService.sendRepairCollectedEmail({
+        email: updatedJob.customerSnapshot.email,
+        customerName: updatedJob.customerSnapshot.fullName,
+        reference: updatedJob.reference,
+        deviceModel: updatedJob.makeModel,
+        outcome,
+        collectedAt,
+        notes
+      });
+    }
+  } catch (notifErr) {
+    console.warn('[Handover Notification] Email notification trigger failed:', notifErr.message);
+  }
+
+  return {
+    success: true,
+    message: `Device successfully handed over to customer (${displayOutcome}). Repair job is now Collected and read-only.`,
+    job: serializeJob(updatedJob),
+    update: serializeUpdate(update)
+  };
+};
+
 module.exports = {
   updateProgress,
   getProgressHistory,
@@ -842,5 +987,6 @@ module.exports = {
   resolvePartsHold,
   completeRepair,
   markReadyForReturn,
+  recordHandover,
   assertNotAwaitingApproval
 };

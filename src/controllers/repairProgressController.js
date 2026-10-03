@@ -90,6 +90,19 @@ const markReadyForReturn = async (req, res, next) => {
   }
 };
 
+const recordHandover = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.recordHandover({
+      jobIdentifier: req.params.jobIdentifier || req.params.id,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   updateProgress,
   getProgressHistory,
@@ -97,5 +110,6 @@ module.exports = {
   placePartsHold,
   resolvePartsHold,
   completeRepair,
-  markReadyForReturn
+  markReadyForReturn,
+  recordHandover
 };

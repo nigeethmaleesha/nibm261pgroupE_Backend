@@ -128,9 +128,22 @@ const collectionDetailsSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    collectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    customerIdentityConfirmed: {
+      type: Boolean,
+      default: false
+    },
+    deviceHandedOver: {
+      type: Boolean,
+      default: false
+    },
     outcome: {
       type: String,
-      enum: ['repaired', 'unrepaired', null],
+      enum: ['repaired', 'unrepaired', 'Repaired', 'Unrepaired', null],
       default: null
     },
     notes: {
@@ -443,6 +456,65 @@ repairJobSchema.index(
   { name: 'repair_job_assigned_technician_idx' }
 );
 
+// SCRUM-120: Database trigger making Collected repair jobs strictly immutable.
+// Prevents any updates or deletions once a job reaches the final Collected state.
+repairJobSchema.pre('save', async function () {
+  if (!this.isNew) {
+    try {
+      const existing = await this.constructor.findById(this._id).select('status').lean();
+      if (existing && existing.status === 'Collected') {
+        const err = new Error('Collected repair jobs are immutable and cannot be modified.');
+        err.codeName = 'REPAIR_CLOSED';
+        err.statusCode = 409;
+        throw err;
+      }
+    } catch (err) {
+      if (err.message && err.message.includes('Collected repair jobs are immutable')) {
+        throw err;
+      }
+    }
+  }
+});
+
+repairJobSchema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], async function () {
+  try {
+    if (!this.model) return;
+    const filter = this.getFilter();
+    if (!filter) return;
+    const existing = await this.model.findOne(filter).select('status').lean();
+    if (existing && existing.status === 'Collected') {
+      const err = new Error('Collected repair jobs are immutable and cannot be modified.');
+      err.codeName = 'REPAIR_CLOSED';
+      err.statusCode = 409;
+      throw err;
+    }
+  } catch (err) {
+    if (err.message && err.message.includes('Collected repair jobs are immutable')) {
+      throw err;
+    }
+  }
+});
+
+repairJobSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove'], async function () {
+  try {
+    if (!this.model) return;
+    const filter = this.getFilter();
+    if (!filter) return;
+    const existing = await this.model.findOne(filter).select('status').lean();
+    if (existing && existing.status === 'Collected') {
+      const err = new Error('Collected repair jobs are immutable and cannot be deleted.');
+      err.codeName = 'REPAIR_CLOSED';
+      err.statusCode = 409;
+      throw err;
+    }
+  } catch (err) {
+    if (err.message && err.message.includes('Collected repair jobs are immutable')) {
+      throw err;
+    }
+  }
+});
+
 module.exports = mongoose.model('RepairJob', repairJobSchema);
 module.exports.JOB_STATUSES = JOB_STATUSES;
 module.exports.REVISION_BLOCKED_STATUSES = REVISION_BLOCKED_STATUSES;
+

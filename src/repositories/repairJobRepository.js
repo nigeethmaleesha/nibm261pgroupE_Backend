@@ -473,6 +473,50 @@ const markJobReadyForReturn = (
   { returnDocument: 'after', session }
 );
 
+// SCRUM-120: Owner/Staff records customer handover. Sets status to Collected,
+// stores the staff member and collection time, confirmation flags, outcome,
+// and optional notes. Atomic update guarded by Ready for Collection or Ready for Return.
+const recordHandover = (
+  jobId,
+  {
+    staffId,
+    outcome,
+    notes = null,
+    collectedAt,
+    customerIdentityConfirmed = true,
+    deviceHandedOver = true,
+    expectedRevision = null
+  },
+  session = null
+) => {
+  const revisionFilter = expectedRevision !== null && expectedRevision !== undefined
+    ? (expectedRevision === 0
+        ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+        : { revision: expectedRevision })
+    : {};
+
+  return RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: { $in: ['Ready for Collection', 'Ready for Return'] },
+      ...revisionFilter
+    },
+    {
+      $set: {
+        status: 'Collected',
+        'collectionDetails.collectedAt': collectedAt,
+        'collectionDetails.collectedBy': staffId,
+        'collectionDetails.customerIdentityConfirmed': customerIdentityConfirmed,
+        'collectionDetails.deviceHandedOver': deviceHandedOver,
+        'collectionDetails.outcome': outcome,
+        'collectionDetails.notes': notes || null
+      },
+      $inc: { revision: 1 }
+    },
+    { returnDocument: 'after', session }
+  );
+};
+
 module.exports = {
   create,
   findByIdempotency,
@@ -494,5 +538,6 @@ module.exports = {
   updateStatusForDecision,
   findByCustomer,
   completeRepairJob,
-  markJobReadyForReturn
+  markJobReadyForReturn,
+  recordHandover
 };
