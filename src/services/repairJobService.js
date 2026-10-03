@@ -288,6 +288,16 @@ const serializeStaffJobDetail = (job) => ({
     customerSummary: job.completionDetails?.customerSummary || null,
     internalNotes: job.completionDetails?.internalNotes || null
   },
+  collectionDetails: {
+    collectedAt: job.collectionDetails?.collectedAt || null,
+    collectedBy: job.collectionDetails?.collectedBy && typeof job.collectionDetails.collectedBy === 'object' && job.collectionDetails.collectedBy.fullName
+      ? serializeInternalUser(job.collectionDetails.collectedBy)
+      : (job.collectionDetails?.collectedBy || null),
+    customerIdentityConfirmed: Boolean(job.collectionDetails?.customerIdentityConfirmed),
+    deviceHandedOver: Boolean(job.collectionDetails?.deviceHandedOver),
+    outcome: job.collectionDetails?.outcome || null,
+    notes: job.collectionDetails?.notes || null
+  },
   returnDetails: {
     returnedAt: job.returnDetails?.returnedAt || null,
     returnedBy: job.returnDetails?.returnedBy || null,

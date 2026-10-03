@@ -157,6 +157,14 @@ router.post(
   authorizeRoles('owner_staff'),
   repairProgressController.markReadyForReturn
 );
+
+// SCRUM-120: Owner/Staff records customer handover setting status to Collected
+router.post(
+  ['/jobs/:jobIdentifier/handover', '/jobs/:id/handover'],
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.recordHandover
+);
 // Read-only view of technician progress updates (internal + public rows).
 router.get(
   ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],

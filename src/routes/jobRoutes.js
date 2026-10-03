@@ -3,6 +3,7 @@ const estimateController = require('../controllers/estimateController');
 const estimateRevisionController = require('../controllers/estimateRevisionController');
 const repairJobController = require('../controllers/repairJobController');
 const customerJobController = require('../controllers/customerJobController');
+const repairProgressController = require('../controllers/repairProgressController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -75,6 +76,22 @@ router.get(
   protect,
   authorizeRoles('customer', 'owner_staff'),
   estimateController.getEstimateContext
+);
+
+// SCRUM-120 Jira-compatible endpoint alias: Owner/Staff records customer handover.
+router.post(
+  '/:jobIdentifier/handover',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.recordHandover
+);
+
+// SCRUM-125 Jira-compatible endpoint alias: Customer completed repair record.
+router.get(
+  '/:jobIdentifier/completed',
+  protect,
+  authorizeRoles('customer', 'owner_staff'),
+  customerJobController.getCompletedJobDetail
 );
 
 module.exports = router;

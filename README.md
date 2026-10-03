@@ -23,6 +23,8 @@
    - [Technician Portal & Assigned Jobs (`/api/technician`)](#5-technician-portal--assigned-jobs-apitechnician)
    - [Estimates Alias (`/api/jobs`)](#6-estimates-alias-apijobs)
    - [Customer Public Repair Tracking (`/api/customer/jobs/:id/track`) — SCRUM-109](#7-customer-public-repair-tracking-scrum-109)
+   - [Staff Customer Device Handover (`/api/staff/jobs/:id/handover`) — SCRUM-120](#8-staff-customer-device-handover-scrum-120)
+   - [Customer Completed Repair Records & History (`/api/customer/jobs/history`) — SCRUM-125](#9-customer-completed-repair-records--history-scrum-125)
 10. [SCRUM Story Implementation Map](#scrum-story-implementation-map)
 11. [Postman Collection & Testing Guide](#postman-collection--testing-guide)
 12. [Team Collaboration & Merging Guidelines](#team-collaboration--merging-guidelines)
@@ -167,6 +169,8 @@ The server will boot on `http://localhost:5000`.
 | `npm run db:sync-indexes` | `node scripts/syncIndexes.js` | Connects to Mongo Atlas and syncs all indexes |
 | `npm run email:check` | `node scripts/checkEmailConfig.js` | Tests SMTP connection using `.env` credentials |
 | `npm run estimate:test-data` | `node scripts/prepareEstimateTestData.js <jobId>` | Prepares a test diagnosis for an existing job (SCRUM-14 testing) |
+| `npm run handover:test` | `node scripts/testDeviceHandover.js` | Runs automated test suite for SCRUM-120 Customer Device Handover & Immutability |
+| `npm run history:test` | `node scripts/testCustomerCompletedHistory.js` | Runs automated test suite for SCRUM-125 Customer Completed Repair Records & History |
 
 ---
 
@@ -408,6 +412,118 @@ Allows customers to track the latest saved status and chronological dated public
 
 ---
 
+### 8. Staff Customer Device Handover (SCRUM-120)
+
+Allows Owner/Staff to record the final physical handover of a device back to its customer once repair or inspection is complete. Transitions status to `Collected`, records staff member ID, collection timestamp, customer identity verification, device handover confirmation, and outcome (`Repaired` or `Unrepaired`). Enforces service-layer and database-level immutability triggers on `Collected` jobs and their audit history.
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/staff/jobs/:id/handover` | Bearer (`owner_staff`) | Records customer handover setting status to `Collected` with timestamp and outcome |
+| `POST` | `/api/staff/jobs/:jobIdentifier/handover` | Bearer (`owner_staff`) | Alias accepting human-readable reference (e.g. `JOB-202610-0001`) |
+| `POST` | `/api/jobs/:jobIdentifier/handover` | Bearer (`owner_staff`) | Jira-compatible endpoint alias |
+
+*Sample Handover Request Body:*
+```json
+{
+  "customerIdentityConfirmed": true,
+  "deviceHandedOver": true,
+  "notes": "Customer presented National Identity Card and settled repair payment."
+}
+```
+
+*Key Acceptance Criteria & Guarantees:*
+- **Ready State Requirement**: Handover is strictly allowed only when job is in `Ready for Collection` or `Ready for Return`. Attempting handover from any other status returns `409 Conflict` (`INVALID_STATUS`).
+- **Confirmation Verification**: Requires explicit verification of customer identity (`customerIdentityConfirmed: true`) and device handover (`deviceHandedOver: true`), returning `422 Unprocessable Entity` if either is missing or false.
+- **Traceable Outcome**: Sets outcome to `'repaired'` for jobs that were `Ready for Collection`, or `'unrepaired'` for jobs that were `Ready for Return`.
+- **Traceable Attribution**: Persists `collectedAt` timestamp, `collectedBy` staff ObjectId, and optional notes in `collectionDetails`.
+- **Idempotent Replay**: Repeating the handover request on an already `Collected` job returns `200 OK` with the existing job state (`alreadyCollected: true`) without creating duplicate progress update events.
+- **Role-Based Access Control**: Non-staff actors (customers, technicians) are strictly rejected with `403 Forbidden`.
+- **Database Trigger & Immutability (`[DB]`)**: Mongoose triggers (`pre('save')`, `pre('updateOne')`, `pre('findOneAndUpdate')`, `pre('deleteOne')`) and history hooks make `Collected` repair jobs, estimates, and progress updates strictly read-only and immutable against post-collection tampering.
+
+---
+
+### 9. Customer Completed Repair Records & History (SCRUM-125)
+
+Allows authenticated customers to access their completed repair records after handover. Scoped strictly to the authenticated customer's own jobs. Exposes device reference, device info, public repair summary or return reason, outcome (`Repaired` or `Unrepaired`), collection timestamp, and issued estimate versions with recorded customer decisions. Strictly filters out all internal diagnosis notes, findings, recommended work, and private technician work notes. Multi-tenant IDOR protection denies unauthorized access to other customers' jobs with 404 Not Found.
+
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/customer/jobs/history` | Bearer / Cookie (`customer`) | Lists all completed (`Collected`) repair records for the authenticated customer |
+| `GET` | `/api/customer/jobs/:jobIdentifier/history` | Bearer / Cookie (`customer`) | Fetches full completed repair record detail, public timeline events, and estimate history for a specific job |
+| `GET` | `/api/jobs/:jobIdentifier/completed` | Bearer / Cookie (`customer`) | Jira-compatible alias route for completed job detail view |
+
+*Sample Customer Completed History Response (`200 OK`):*
+```json
+{
+  "status": "success",
+  "data": {
+    "count": 1,
+    "jobs": [
+      {
+        "reference": "JOB-202610-0001",
+        "device": {
+          "brand": "Apple",
+          "model": "iPhone 13",
+          "serialNumber": "SN-IPHONE13-001"
+        },
+        "reportedFault": "Battery drains very fast and device overheats",
+        "status": "Collected",
+        "outcome": "repaired",
+        "outcomeDisplay": "Repaired",
+        "outcomeDescription": "The device was successfully repaired and returned to you in working order.",
+        "collectedAt": "2026-10-03T05:30:00.000Z",
+        "collectionTime": "2026-10-03T05:30:00.000Z",
+        "publicRepairSummary": "Replaced battery pack and performed full thermal test.",
+        "returnReason": null,
+        "returnNotes": null,
+        "latestEstimate": {
+          "versionNumber": 1,
+          "status": "Approved",
+          "currency": "LKR",
+          "total": "28500.00",
+          "customerDecision": {
+            "action": "APPROVED",
+            "decidedAt": "2026-10-02T10:00:00.000Z"
+          },
+          "items": [
+            {
+              "description": "OEM Battery Pack",
+              "quantity": 1,
+              "unitPrice": "22500.00",
+              "totalPrice": "22500.00"
+            }
+          ]
+        },
+        "estimateHistory": [
+          {
+            "versionNumber": 1,
+            "status": "Approved",
+            "currency": "LKR",
+            "total": "28500.00",
+            "customerDecision": {
+              "action": "APPROVED",
+              "decidedAt": "2026-10-02T10:00:00.000Z"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+*Key Acceptance Criteria & Guarantees:*
+- **Completed Filter**: Only repair jobs with `status === 'Collected'` are returned.
+- **Outcome & Collection Details**: Returns `outcome` (`'repaired'` or `'unrepaired'`), `outcomeDisplay`, `outcomeDescription`, and collection timestamp (`collectedAt`).
+- **Public Summary vs. Return Reason**: Shows `publicRepairSummary` for repaired devices, or `returnReason` / `returnNotes` for unrepaired returns.
+- **Estimate History**: Lists all issued estimate versions and the customer's recorded decisions (`action`, timestamp).
+- **Session Persistence**: Historical records remain accessible after logging out and re-authenticating.
+- **Zero Data Leakage**: Internal diagnosis notes (`internalNotes`, `findings`, `recommendedWork`), private technician logs (`is_public: false`), and staff/technician ObjectIds are strictly scrubbed.
+- **IDOR Protection**: Attempting to query another customer's closed job returns `404 NOT_FOUND` (`Completed repair record not found`).
+- **Closed Record Immutability**: Closed records cannot be edited; mutation attempts are rejected at the database and service layer.
+
+---
+
 ## SCRUM Story Implementation Map
 
 | Story ID | Title | Implementation Details |
@@ -423,6 +539,8 @@ Allows customers to track the latest saved status and chronological dated public
 | **SCRUM-45** | Technician Active/Inactive Management | `PATCH /api/staff/technicians/:id/toggle-active`, immediately prevents deactivated technicians from logging in or refreshing tokens. |
 | **SCRUM-104** | Customer Repair Job Listing | `GET /api/customer/my-jobs`, lists all repair jobs owned by the authenticated customer without IDOR risk. |
 | **SCRUM-109** | Customer Public Repair Tracking & History | `GET /api/customer/jobs/:jobIdentifier/track` (and aliases). Returns latest saved status and chronological dated public events sanitized of internal notes and technician IDs. Dynamic estimate decision links for `Awaiting Approval`, public delay reasons for `Waiting for Parts`, handover instructions for `Ready for Collection` / `Ready for Return`, and recorded collection time + outcome for `Collected`. Enforces strict multi-tenant ownership (404 on cross-customer access). |
+| **SCRUM-120** | Customer Device Handover & Collected Immutability | `POST /api/staff/jobs/:id/handover` (and aliases). Transitions `Ready for Collection` or `Ready for Return` jobs to `Collected`, records staff member (`collectedBy`), collection timestamp (`collectedAt`), and outcome (`Repaired` or `Unrepaired`). Enforces customer identity verification and physical handover confirmation flags. Idempotent replay returns existing result without new events. Database triggers and service-layer locks render `Collected` jobs and history immutable. |
+| **SCRUM-125** | Customer Completed Repair Records & History | `GET /api/customer/jobs/history`, `GET /api/customer/jobs/:jobIdentifier/history`, and `GET /api/jobs/:jobIdentifier/completed`. Scoped to authenticated customer. Returns reference, device, public repair summary or return reason/notes, outcome (`Repaired` or `Unrepaired`), collection timestamp, and issued estimate versions with recorded customer decisions. Multi-tenant IDOR defense returns 404 for unauthorized access. Closed records are strictly read-only. Zero data leakage filters out all internal diagnosis and work notes. |
 
 ---
 
@@ -442,21 +560,29 @@ Set the initial/current values for:
 - `testEmail`: A real email inbox you have access to (to receive OTPs).
 - `ownerSetupKey`: Value matching `OWNER_SETUP_KEY` in your `.env`.
 
-### 3. Collection Structure (15 Folders)
-1. `Health` — System health check
-2. `Customer Authentication` — Register, verify OTP, login, forgot password, me
-3. `Staff Setup & Authentication` — One-time setup, login, forgot password, me
-4. `Technician Activation & Authentication` — Login, forgot password, me
-5. `Shared Internal Authentication` — Auto role-detect login, logout
-6. `Staff - Customer Lookup (SCRUM-9 / SCRUM-33)` — Search customers
-7. `Staff - Repair Job Registration (SCRUM-9)` — Create intake, test idempotency
-8. `Staff - Estimate Context & Issue (SCRUM-14)` — Estimate context and issuance
-9. `Jobs - Estimate Issue Alias (SCRUM-14 Jira Route)` — Jira alias test
-10. `Staff - Technician Management (SCRUM-44 / SCRUM-45)` — Create tech, verify OTP, toggle active
-11. `Technician - Assigned Jobs (SCRUM-41)` — List my jobs, get job details, 403 authorization check
-12. `Customer - Estimate Decision` — Get estimate detail, approve estimate, idempotent replay, reject estimate, 409 stale state check
-13. `Session Management (Refresh Token)` — Test token rotation & logout
-14. `Customer - Public Repair Tracking (SCRUM-109)` — Track job status, chronological timeline, estimate decision link, delay reasons, handover instructions, collection outcome, and 404 IDOR test
+### 3. Collection Structure (22 Folders)
+1. `Setup & Health` — System health check
+2. `Customer Registration` — Register, verify OTP, resend OTP
+3. `Customer Login & Logout` — Login, OTP verify, session cookies
+4. `Customer Forgot Password` — Reset flow with OTP
+5. `Owner Staff Setup` — One-time setup with OWNER_SETUP_KEY
+6. `Technician Account Creation` — Staff creates technician
+7. `Owner Staff - Technician Listing & Toggle` — Active/inactive toggle
+8. `Technician Login, Profile & Refresh` — Tech login & token rotation
+9. `Technician Forgot Password` — Tech password recovery
+10. `Owner Staff Forgot Password` — Staff password recovery
+11. `RBAC & Security Checks` — Role boundary checks
+12. `Owner Staff & Technician Logout` — Revocation & cookie clearing
+13. `Repair Job Registration` — Intake creation & idempotency key
+14. `Estimate Creation and Issue` — SCRUM-14 initial estimate
+15. `Customer - Estimate Decision Copy` — Approve/Reject initial estimate
+16. `Technician - Assigned Jobs (SCRUM-41)` — List my jobs & job details
+17. `Customer - Current Estimate View (SCRUM-15)` — Customer estimate view
+18. `Owner Staff - Estimate Revision` — Revision draft & re-issue
+19. `Repair Progress Lock` — Repair progress state transitions
+20. `Customer - Public Repair Tracking (SCRUM-109)` — Track job status, timeline & delay reasons
+21. `Staff - Customer Device Handover (SCRUM-120)` — Handover for Repaired & Unrepaired jobs
+22. `Customer - Completed Repair Records & History (SCRUM-125)` — Completed history, estimate decisions & IDOR protection
 
 ### 4. Testing SCRUM-41 (Technician Assigned Jobs)
 1. Run **Technician Login** or use an existing technician token.
@@ -477,6 +603,53 @@ Set the initial/current values for:
    - **Ready for Collection / Return**: Verify `handoverInstruction` displays appropriate customer instructions for collection or unrepaired return.
    - **Collected**: Verify `collection.collectedAt` and `collection.outcome` (`'repaired'` or `'unrepaired'`) are accurately reported.
    - **IDOR Protection**: Attempt to access a job belonging to another customer — verify the response returns `404 NOT_FOUND` (`Repair job not found`).
+
+### 6. Testing SCRUM-120 (Staff Customer Device Handover & Collected Immutability)
+1. Log in as an Owner/Staff member using `POST /api/staff/auth/login` and verify OTP.
+2. Ensure test job is in `Ready for Collection` (after technician repair completion) or `Ready for Return` (unrepaired).
+3. Call `POST /api/staff/jobs/:id/handover` with:
+   ```json
+   {
+     "customerIdentityConfirmed": true,
+     "deviceHandedOver": true,
+     "notes": "ID verified with driving license."
+   }
+   ```
+4. Verify response:
+   - Status transitions to `Collected`.
+   - `collectionDetails.collectedAt` captures current timestamp.
+   - `collectionDetails.collectedBy` records acting staff member ObjectId.
+   - `collectionDetails.outcome` is `'repaired'` (if previously Ready for Collection) or `'unrepaired'` (if previously Ready for Return).
+   - An audit trail progress update is appended to `repair_progress_updates`.
+5. Repeat the identical request:
+   - Returns `200 OK` with existing Collected job and `alreadyCollected: true` without creating another progress update event.
+6. Test refusal cases:
+   - Attempt handover without `customerIdentityConfirmed: true` -> returns `422 Unprocessable Entity`.
+   - Attempt handover on an `In Repair` or `Received` job -> returns `409 Conflict` (`INVALID_STATUS`).
+   - Attempt handover using customer or technician token -> returns `403 Forbidden`.
+   - Attempt modifying or deleting a `Collected` job -> database triggers and service-layer locks reject mutation with `409 REPAIR_CLOSED`.
+7. Run the automated test suite anytime via:
+   ```bash
+   npm run handover:test
+   ```
+
+### 7. Testing SCRUM-125 (Customer Completed Repair Records & History)
+1. Log in as a customer with completed repair jobs using `POST /api/auth/login` and verify OTP.
+2. Call `GET /api/customer/jobs/history`:
+   - Inspect the returned list of completed jobs.
+   - Verify each record includes `reference`, `device`, `outcome` (`'repaired'` or `'unrepaired'`), `outcomeDisplay`, `outcomeDescription`, `collectionTime`, `publicRepairSummary` (or `returnReason` / `returnNotes`), and `estimateHistory`.
+   - Verify all issued estimate versions and customer decisions (`APPROVED`/`REJECTED`) are clearly exposed.
+   - Verify zero data leakage: no internal diagnosis notes, findings, or technician ObjectIds.
+3. Call `GET /api/customer/jobs/:jobIdentifier/history` (or `GET /api/jobs/:jobIdentifier/completed`):
+   - Inspect detailed record including `publicEvents` chronological timeline and estimate breakdown.
+4. Test security and error cases:
+   - Request another customer's closed job reference -> returns `404 NOT_FOUND` (`Completed repair record not found`).
+   - Request a job that is still in progress (not `Collected`) -> returns `400 Bad Request` (`JOB_NOT_COLLECTED`).
+   - Log out, log back in, and request `GET /api/customer/jobs/history` again -> confirms history remains accessible across sessions.
+5. Run the automated test suite:
+   ```bash
+   npm run history:test
+   ```
 
 ---
 

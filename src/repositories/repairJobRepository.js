@@ -398,6 +398,11 @@ const findByCustomer = (customerId) =>
     .select('reference deviceType makeModel serialNumber status receivedAt currentEstimate')
     .sort({ receivedAt: -1 });
 
+// SCRUM-125: return all completed (Collected) repair jobs belonging to the authenticated customer
+const findCompletedByCustomer = (customerId) =>
+  RepairJob.find({ customer: customerId, status: 'Collected' })
+    .sort({ 'collectionDetails.collectedAt': -1, updatedAt: -1 });
+
 // SCRUM-25 / SCRUM-113: Complete repair and move status to Ready for Collection.
 // Rechecks atomically that the job is In Repair, assigned to this technician,
 // matches the approved estimate and revision, and has no active parts hold.
@@ -473,6 +478,50 @@ const markJobReadyForReturn = (
   { returnDocument: 'after', session }
 );
 
+// SCRUM-120: Owner/Staff records customer handover. Sets status to Collected,
+// stores the staff member and collection time, confirmation flags, outcome,
+// and optional notes. Atomic update guarded by Ready for Collection or Ready for Return.
+const recordHandover = (
+  jobId,
+  {
+    staffId,
+    outcome,
+    notes = null,
+    collectedAt,
+    customerIdentityConfirmed = true,
+    deviceHandedOver = true,
+    expectedRevision = null
+  },
+  session = null
+) => {
+  const revisionFilter = expectedRevision !== null && expectedRevision !== undefined
+    ? (expectedRevision === 0
+        ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+        : { revision: expectedRevision })
+    : {};
+
+  return RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: { $in: ['Ready for Collection', 'Ready for Return'] },
+      ...revisionFilter
+    },
+    {
+      $set: {
+        status: 'Collected',
+        'collectionDetails.collectedAt': collectedAt,
+        'collectionDetails.collectedBy': staffId,
+        'collectionDetails.customerIdentityConfirmed': customerIdentityConfirmed,
+        'collectionDetails.deviceHandedOver': deviceHandedOver,
+        'collectionDetails.outcome': outcome,
+        'collectionDetails.notes': notes || null
+      },
+      $inc: { revision: 1 }
+    },
+    { returnDocument: 'after', session }
+  );
+};
+
 module.exports = {
   create,
   findByIdempotency,
@@ -493,6 +542,8 @@ module.exports = {
   findAssignedToTechnician,
   updateStatusForDecision,
   findByCustomer,
+  findCompletedByCustomer,
   completeRepairJob,
-  markJobReadyForReturn
+  markJobReadyForReturn,
+  recordHandover
 };

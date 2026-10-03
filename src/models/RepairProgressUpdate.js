@@ -59,4 +59,12 @@ repairProgressUpdateSchema.index(
   { name: 'repair_progress_job_created_idx' }
 );
 
+// SCRUM-120: History records are immutable and read-only.
+repairProgressUpdateSchema.pre(
+  ['deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove', 'updateOne', 'updateMany', 'findOneAndUpdate'],
+  function () {
+    throw new Error('Repair progress history records are immutable and read-only.');
+  }
+);
+
 module.exports = mongoose.model('RepairProgressUpdate', repairProgressUpdateSchema);
