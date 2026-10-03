@@ -35,8 +35,37 @@ const getJobTracking = async (req, res, next) => {
   }
 };
 
+// SCRUM-125: Customer completed repair records & history controller.
+// GET /api/customer/jobs/history
+const getCompletedHistory = async (req, res, next) => {
+  try {
+    const history = await customerTrackingService.getCompletedHistory({
+      actor: req.user,
+      query: req.query
+    });
+    return res.status(200).json(history);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// GET /api/customer/jobs/:jobIdentifier/history
+const getCompletedJobDetail = async (req, res, next) => {
+  try {
+    const detail = await customerTrackingService.getCompletedJobDetail({
+      jobIdentifier: req.params.jobIdentifier || req.query.jobIdentifier,
+      actor: req.user
+    });
+    return res.status(200).json(detail);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   listMyJobs,
   getJobTracking,
-  trackJob: getJobTracking
+  trackJob: getJobTracking,
+  getCompletedHistory,
+  getCompletedJobDetail
 };

@@ -86,4 +86,12 @@ router.post(
   repairProgressController.recordHandover
 );
 
+// SCRUM-125 Jira-compatible endpoint alias: Customer completed repair record.
+router.get(
+  '/:jobIdentifier/completed',
+  protect,
+  authorizeRoles('customer', 'owner_staff'),
+  customerJobController.getCompletedJobDetail
+);
+
 module.exports = router;

@@ -116,18 +116,20 @@ const buildPublicEvents = ({
 
   // 3. Estimate Events (issued & customer decisions)
   for (const est of estimates) {
+    const estTime = est.createdAt || est.issuedAt || new Date();
     events.push({
       id: `estimate-issued-${est._id}`,
       eventType: 'ESTIMATE_ISSUED',
       status: 'Awaiting Approval',
       title: `Repair Estimate Issued (v${est.versionNumber})`,
       description: `Repair estimate of LKR ${formatMinor(est.totalMinor)} issued for customer review.`,
-      timestamp: est.createdAt,
-      date: new Date(est.createdAt).toISOString()
+      timestamp: estTime,
+      date: new Date(estTime).toISOString()
     });
 
     if (est.decision?.decidedAt) {
       const isApproved = est.decision.action === 'APPROVED' || est.status === 'Approved';
+      const decisionTime = est.decision.decidedAt || new Date();
       events.push({
         id: `estimate-decision-${est._id}`,
         eventType: isApproved ? 'ESTIMATE_APPROVED' : 'ESTIMATE_REJECTED',
@@ -136,8 +138,8 @@ const buildPublicEvents = ({
         description: isApproved
           ? `Customer approved estimate version ${est.versionNumber}.`
           : `Customer rejected estimate version ${est.versionNumber}.`,
-        timestamp: est.decision.decidedAt,
-        date: new Date(est.decision.decidedAt).toISOString()
+        timestamp: decisionTime,
+        date: new Date(decisionTime).toISOString()
       });
     }
   }
@@ -350,6 +352,184 @@ const getJobTracking = async ({ jobIdentifier, actor }) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// SCRUM-125: Customer view completed repair records & history
+// ---------------------------------------------------------------------------
+
+const serializeCustomerEstimate = async (est) => {
+  const items = await estimateRepository.listItems(est._id);
+  return {
+    id: est._id,
+    versionNumber: est.versionNumber,
+    status: est.status,
+    currency: est.currency,
+    totalMinor: est.totalMinor,
+    total: formatMinor(est.totalMinor),
+    changeReason: est.changeReason || null,
+    issuedAt: est.issuedAt,
+    decision: est.decision?.action ? {
+      action: est.decision.action,
+      decidedAt: est.decision.decidedAt
+    } : null,
+    items: items.map((item) => ({
+      lineNumber: item.lineNumber,
+      type: item.type,
+      description: item.description,
+      quantity: item.quantity,
+      unitPriceMinor: item.unitPriceMinor,
+      unitPrice: formatMinor(item.unitPriceMinor),
+      lineTotalMinor: item.lineTotalMinor,
+      lineTotal: formatMinor(item.lineTotalMinor)
+    }))
+  };
+};
+
+const formatCompletedJobSummary = async (job) => {
+  const allEstimates = await estimateRepository.listByJob(job._id);
+  const estimates = await Promise.all(allEstimates.map(serializeCustomerEstimate));
+
+  const outcome = (job.collectionDetails?.outcome || '').toLowerCase() === 'unrepaired'
+    ? 'unrepaired'
+    : 'repaired';
+  const outcomeDisplay = outcome === 'repaired' ? 'Repaired' : 'Unrepaired';
+  const outcomeDescription = outcome === 'repaired'
+    ? 'Device was successfully repaired and collected by customer.'
+    : 'Device was collected unrepaired by customer.';
+
+  const collectionTime = job.collectionDetails?.collectedAt || job.updatedAt;
+
+  return {
+    id: job._id,
+    reference: job.reference,
+    status: 'Collected',
+    deviceType: job.deviceType,
+    makeModel: job.makeModel,
+    serialNumber: job.serialNumber || null,
+    reportedFault: job.reportedFault,
+    receivedAt: job.receivedAt,
+    completedAt: collectionTime,
+    collection: {
+      collectedAt: collectionTime,
+      collectionTime,
+      outcome,
+      outcomeDisplay,
+      outcomeDescription,
+      notes: job.collectionDetails?.notes || null
+    },
+    publicRepairSummary: job.completionDetails?.customerSummary || null,
+    returnReason: job.returnDetails?.reason || null,
+    returnNotes: job.returnDetails?.notes || null,
+    estimates,
+    totalEstimatesCount: estimates.length
+  };
+};
+
+const getCompletedHistory = async ({ actor, query = {} }) => {
+  if (!actor || !['customer', 'owner_staff'].includes(actor.role)) {
+    throw createHttpError('You do not have permission to access customer repair history', 403, 'FORBIDDEN');
+  }
+
+  // If query specifies a specific job, return detail
+  const targetIdentifier = query.jobIdentifier || query.id || query.reference;
+  if (targetIdentifier) {
+    return getCompletedJobDetail({ jobIdentifier: targetIdentifier, actor });
+  }
+
+  const customerId = actor.role === 'customer'
+    ? actor._id
+    : (query.customerId || actor._id);
+
+  const jobs = await repairJobRepository.findCompletedByCustomer(customerId);
+  const completedJobs = await Promise.all(jobs.map(formatCompletedJobSummary));
+
+  return {
+    count: completedJobs.length,
+    jobs: completedJobs,
+    completedJobs
+  };
+};
+
+const getCompletedJobDetail = async ({ jobIdentifier, actor }) => {
+  if (!actor || !['customer', 'owner_staff'].includes(actor.role)) {
+    throw createHttpError('You do not have permission to access customer repair history', 403, 'FORBIDDEN');
+  }
+
+  const job = await repairJobRepository.findByIdOrReference(jobIdentifier);
+  if (!job) {
+    throw createHttpError('Repair job not found', 404, 'NOT_FOUND');
+  }
+
+  // Multi-tenant customer ownership check
+  if (actor.role === 'customer' && !sameId(job.customer, actor._id)) {
+    throw createHttpError('Repair job not found', 404, 'NOT_FOUND');
+  }
+
+  // Verify that the record is in Collected state
+  if (job.status !== 'Collected') {
+    throw createHttpError(
+      `This repair record is not yet completed/collected (current status: ${job.status})`,
+      400,
+      'JOB_NOT_COLLECTED'
+    );
+  }
+
+  const [allEstimates, progressUpdates, publicLogs, diagnosis] = await Promise.all([
+    estimateRepository.listByJob(job._id),
+    repairProgressRepository.listByJob(job._id),
+    jobProgressLogRepository.listPublicByJob(job._id),
+    diagnosisRepository.findByJob(job._id)
+  ]);
+
+  const estimates = await Promise.all(allEstimates.map(serializeCustomerEstimate));
+  const publicEvents = buildPublicEvents({
+    job,
+    progressUpdates,
+    publicLogs,
+    estimates: allEstimates,
+    diagnosis
+  });
+
+  const outcome = (job.collectionDetails?.outcome || '').toLowerCase() === 'unrepaired'
+    ? 'unrepaired'
+    : 'repaired';
+  const outcomeDisplay = outcome === 'repaired' ? 'Repaired' : 'Unrepaired';
+  const outcomeDescription = outcome === 'repaired'
+    ? 'Device was successfully repaired and collected by customer.'
+    : 'Device was collected unrepaired by customer.';
+  const collectionTime = job.collectionDetails?.collectedAt || job.updatedAt;
+
+  return {
+    job: {
+      id: job._id,
+      reference: job.reference,
+      status: 'Collected',
+      deviceType: job.deviceType,
+      makeModel: job.makeModel,
+      serialNumber: job.serialNumber || null,
+      reportedFault: job.reportedFault,
+      receivedAt: job.receivedAt,
+      completedAt: collectionTime
+    },
+    collection: {
+      collectedAt: collectionTime,
+      collectionTime,
+      outcome,
+      outcomeDisplay,
+      outcomeDescription,
+      notes: job.collectionDetails?.notes || null
+    },
+    publicRepairSummary: job.completionDetails?.customerSummary || null,
+    returnReason: job.returnDetails?.reason || null,
+    returnNotes: job.returnDetails?.notes || null,
+    estimates,
+    totalEstimatesCount: estimates.length,
+    publicEvents,
+    timelineCount: publicEvents.length
+  };
+};
+
 module.exports = {
-  getJobTracking
+  getJobTracking,
+  getCompletedHistory,
+  getCompletedJobDetail
 };

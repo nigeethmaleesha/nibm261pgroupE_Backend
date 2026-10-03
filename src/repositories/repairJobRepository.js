@@ -398,6 +398,11 @@ const findByCustomer = (customerId) =>
     .select('reference deviceType makeModel serialNumber status receivedAt currentEstimate')
     .sort({ receivedAt: -1 });
 
+// SCRUM-125: return all completed (Collected) repair jobs belonging to the authenticated customer
+const findCompletedByCustomer = (customerId) =>
+  RepairJob.find({ customer: customerId, status: 'Collected' })
+    .sort({ 'collectionDetails.collectedAt': -1, updatedAt: -1 });
+
 // SCRUM-25 / SCRUM-113: Complete repair and move status to Ready for Collection.
 // Rechecks atomically that the job is In Repair, assigned to this technician,
 // matches the approved estimate and revision, and has no active parts hold.
@@ -537,6 +542,7 @@ module.exports = {
   findAssignedToTechnician,
   updateStatusForDecision,
   findByCustomer,
+  findCompletedByCustomer,
   completeRepairJob,
   markJobReadyForReturn,
   recordHandover

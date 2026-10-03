@@ -59,5 +59,23 @@ router.get(
   customerJobController.getJobTracking
 );
 
+// SCRUM-125: Customer view completed repair records & history
+// GET /api/customer/jobs/history
+// Returns all completed/Collected repair jobs for the authenticated customer,
+// including reference, device, public repair summary or return reason, outcome,
+// collection time, and all issued estimate versions with recorded decisions.
+router.get(
+  '/jobs/history',
+  protect,
+  authorizeRoles('customer'),
+  customerJobController.getCompletedHistory
+);
+router.get(
+  ['/jobs/:jobIdentifier/history', '/jobs/history/:jobIdentifier'],
+  protect,
+  authorizeRoles('customer'),
+  customerJobController.getCompletedJobDetail
+);
+
 module.exports = router;
 
