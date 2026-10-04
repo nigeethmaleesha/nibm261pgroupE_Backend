@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const RepairJob = require('../models/RepairJob');
+const User = require('../models/User');
 
 const create = (data) => RepairJob.create(data);
 
@@ -104,6 +105,72 @@ const findForStaffDetail = (identifier, { session = null } = {}) => {
 
   if (session) query = query.session(session);
   return query;
+};
+
+const getStaffDashboardMetrics = ({ filter, queueStatuses }) => {
+  const queueEntries = Object.entries(queueStatuses);
+  const workloadStatuses = queueEntries.map(([, status]) => status);
+  const queues = Object.fromEntries(
+    queueEntries.map(([queueName, status]) => [
+      queueName,
+      [
+        { $match: { status } },
+        { $sort: { receivedAt: -1, _id: -1 } },
+        {
+          $lookup: {
+            from: User.collection.name,
+            localField: 'assignedTechnician',
+            foreignField: '_id',
+            pipeline: [{ $project: { _id: 0, fullName: 1 } }],
+            as: 'technician'
+          }
+        },
+        {
+          $unwind: {
+            path: '$technician',
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            id: '$_id',
+            reference: 1,
+            customerName: '$customerSnapshot.fullName',
+            deviceType: 1,
+            makeModel: 1,
+            assignedTechnicianName: { $ifNull: ['$technician.fullName', null] },
+            receivedAt: 1,
+            status: 1
+          }
+        }
+      ]
+    ])
+  );
+  const queueSizes = Object.fromEntries(
+    queueEntries.map(([queueName]) => [queueName, { $size: `$${queueName}` }])
+  );
+
+  return RepairJob.aggregate([
+    {
+      $match: {
+        $and: [
+          filter,
+          { status: { $in: workloadStatuses } }
+        ]
+      }
+    },
+    { $facet: queues },
+    {
+      $project: {
+        _id: 0,
+        summary: queueSizes,
+        queues: Object.fromEntries(
+          queueEntries.map(([queueName]) => [queueName, `$${queueName}`])
+        )
+      }
+    }
+  ]).then(([metrics]) => metrics);
 };
 
 // SCRUM-11: assignment update is guarded by both workflow state and optimistic
@@ -336,6 +403,7 @@ module.exports = {
   attachInitialEstimate,
   searchForStaff,
   findForStaffDetail,
+  getStaffDashboardMetrics,
   assignTechnician,
   attachRevisedEstimate,
   applyProgressUpdate,

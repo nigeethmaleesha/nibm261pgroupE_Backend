@@ -290,6 +290,15 @@ Auto-detects whether the user is `owner_staff` or `technician` from their email.
 Endpoints mirror `/api/internal/auth` under the `/api/staff/auth/*` path.
 `GET /api/staff/auth/me` is restricted to `owner_staff`.
 
+#### Staff Dashboard Metrics (SCRUM-133)
+| Method | Endpoint | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/staff/dashboard/metrics` | Owner/Staff | Returns counts and job lists for Awaiting Approval, Waiting for Parts, Ready for Collection, and Ready for Return |
+
+Optional query parameters can be combined: `technicianId` (an existing technician's MongoDB ID), `from` and `to` (`YYYY-MM-DD`, inclusive, applied to `receivedAt`), and `status` (a value from the RepairJob status enum).
+
+Example: `GET /api/staff/dashboard/metrics?technicianId=<id>&from=2026-10-01&to=2026-10-04&status=Waiting%20for%20Parts`
+
 #### Technician Management (SCRUM-44 & SCRUM-45)
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :--- | :--- |
@@ -390,6 +399,7 @@ Endpoints under `/api/technician/auth/*` handle technician login, OTP verificati
 | Story ID | Title | Implementation Details |
 | :--- | :--- | :--- |
 | **SCRUM-9** | Repair Job Registration | Intake endpoint `POST /api/staff/jobs`, idempotent replay protection via `Idempotency-Key`, auto-generated reference `JOB-YYYYMM-XXXX`, initial `Received` status. |
+| **SCRUM-133** | Staff Dashboard Metrics | `GET /api/staff/dashboard/metrics` returns real-time workload counts and categorized jobs; supports technician, received-date range, and status filters. |
 | **SCRUM-14** | Issue Initial Repair Estimate | `POST /api/staff/jobs/:id/estimates` and `/api/jobs/:id/estimates`, checks completed diagnosis prerequisite, immutable versioning, minor-unit money arithmetic. |
 | **Customer Decision** | Customer Estimate Approval / Rejection | `POST /api/jobs/:id/estimate-decision` and `GET /api/jobs/:id/estimate`, records customer identity, estimate version & timestamp, updates `Estimate` & `RepairJob` status concurrently, idempotent replay (200 OK), stale state protection (409 Conflict), strict customer ownership check (403 Forbidden). |
 | **SCRUM-32** | Customer Registration & Email Verification | Public self-registration, 6-digit OTP verification, prevents duplicate active emails. |

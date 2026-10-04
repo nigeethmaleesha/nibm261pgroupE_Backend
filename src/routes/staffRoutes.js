@@ -31,6 +31,13 @@ router.post('/auth/refresh-token', staffAuth.refreshToken);
 router.post('/auth/logout', staffAuth.logout);
 router.get('/auth/me', protect, authorizeRoles('owner_staff'), staffAuth.me);
 
+// SCRUM-133: filtered Owner/Staff dashboard workload metrics.
+router.get(
+  '/dashboard/metrics',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.getStaffDashboardMetrics
+);
 
 // SCRUM-9: repair intake support. Owner/Staff selects an existing registered
 // customer, then creates one Received repair job using an idempotency key.

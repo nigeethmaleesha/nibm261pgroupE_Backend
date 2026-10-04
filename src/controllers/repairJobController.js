@@ -63,6 +63,18 @@ const getStaffJob = async (req, res, next) => {
   }
 };
 
+const getStaffDashboardMetrics = async (req, res, next) => {
+  try {
+    const metrics = await repairJobService.getStaffDashboardMetrics({
+      filters: req.query,
+      actor: req.user
+    });
+    return res.status(200).json(metrics);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 // SCRUM-11: Owner/Staff technician assignment with workflow/audit checks.
 const assignTechnician = async (req, res, next) => {
   try {
@@ -109,6 +121,7 @@ module.exports = {
   createRepairJob,
   searchStaffJobs,
   getStaffJob,
+  getStaffDashboardMetrics,
   assignTechnician,
   listMyJobs,
   getMyJob

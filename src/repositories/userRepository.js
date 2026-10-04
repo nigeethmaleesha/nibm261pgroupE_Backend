@@ -107,6 +107,11 @@ const findActiveVerifiedTechnicianById = (id, { session = null } = {}) => {
   return query;
 };
 
+const findTechnicianById = (id) => User.findOne({
+  _id: id,
+  role: 'technician'
+}).select('_id');
+
 const listTechnicians = (status = 'active') => {
   const filter = {
     role: 'technician',
@@ -126,6 +131,7 @@ module.exports = {
   createPendingCustomer,
   createPendingInternalUser,
   listTechnicians,
+  findTechnicianById,
   findActiveVerifiedTechnicianById,
   findRegisteredCustomerById,
   searchRegisteredCustomers,

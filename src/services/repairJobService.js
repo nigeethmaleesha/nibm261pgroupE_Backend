@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
+const { JOB_STATUSES } = require('../models/RepairJob');
 const repairJobRepository = require('../repositories/repairJobRepository');
 const userRepository = require('../repositories/userRepository');
 const repairJobAssignmentAuditRepository = require('../repositories/repairJobAssignmentAuditRepository');
@@ -329,6 +330,92 @@ const getStaffRepairJobDetail = async ({ jobIdentifier, actor }) => {
   return serializeStaffJobDetail(job);
 };
 
+const STAFF_DASHBOARD_QUEUES = {
+  awaitingApproval: 'Awaiting Approval',
+  waitingForParts: 'Waiting for Parts',
+  readyForCollection: 'Ready for Collection',
+  readyForReturn: 'Ready for Return'
+};
+
+const readDashboardFilter = (value, fieldName) => {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || !value.trim()) {
+    throw createHttpError(`${fieldName} must be a single non-empty value`, 400);
+  }
+  return value.trim();
+};
+
+const parseDashboardDate = (value, fieldName) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw createHttpError(`${fieldName} must be a valid date in YYYY-MM-DD format`, 400);
+  }
+
+  const parsedDate = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== value) {
+    throw createHttpError(`${fieldName} must be a valid date in YYYY-MM-DD format`, 400);
+  }
+
+  return parsedDate;
+};
+
+const getStaffDashboardMetrics = async ({ filters = {}, actor }) => {
+  if (!actor || actor.role !== 'owner_staff') {
+    throw createHttpError('Only Owner/Staff can view dashboard metrics', 403);
+  }
+
+  const filter = {};
+  const technicianId = readDashboardFilter(filters.technicianId, 'technicianId');
+  if (technicianId) {
+    if (!mongoose.isValidObjectId(technicianId)) {
+      throw createHttpError('technicianId must be a valid MongoDB ObjectId', 400);
+    }
+  }
+
+  const from = readDashboardFilter(filters.from, 'from');
+  const to = readDashboardFilter(filters.to, 'to');
+  if (from || to) {
+    const receivedAt = {};
+    const fromDate = from ? parseDashboardDate(from, 'from') : null;
+    const toDate = to ? parseDashboardDate(to, 'to') : null;
+
+    if (fromDate && toDate && fromDate > toDate) {
+      throw createHttpError('from must be on or before to', 400);
+    }
+
+    if (fromDate) receivedAt.$gte = fromDate;
+    if (toDate) {
+      const exclusiveEnd = new Date(toDate);
+      exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
+      receivedAt.$lt = exclusiveEnd;
+    }
+    filter.receivedAt = receivedAt;
+  }
+
+  const status = readDashboardFilter(filters.status, 'status');
+  if (status) {
+    const matchingStatus = JOB_STATUSES.find(
+      (jobStatus) => jobStatus.toLowerCase() === status.toLowerCase()
+    );
+    if (!matchingStatus) {
+      throw createHttpError(`status must be one of: ${JOB_STATUSES.join(', ')}`, 422);
+    }
+    filter.status = matchingStatus;
+  }
+
+  if (technicianId) {
+    const technician = await userRepository.findTechnicianById(technicianId);
+    if (!technician) {
+      throw createHttpError('Technician not found', 404);
+    }
+    filter.assignedTechnician = new mongoose.Types.ObjectId(technicianId);
+  }
+
+  return repairJobRepository.getStaffDashboardMetrics({
+    filter,
+    queueStatuses: STAFF_DASHBOARD_QUEUES
+  });
+};
+
 const normalizeTechnicianId = (value) => {
   const technicianId = String(value || '').trim();
 
@@ -505,6 +592,7 @@ module.exports = {
   serializeRepairJob,
   searchStaffRepairJobs,
   getStaffRepairJobDetail,
+  getStaffDashboardMetrics,
   assignRepairJob,
   listAssignedJobs,
   getAssignedJobDetail,
