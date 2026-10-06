@@ -5,6 +5,9 @@ const repairJobController = require('../controllers/repairJobController');
 const estimateController = require('../controllers/estimateController');
 const estimateRevisionController = require('../controllers/estimateRevisionController');
 const repairProgressController = require('../controllers/repairProgressController');
+const jobProgressLogController = require('../controllers/jobProgressLogController');
+const diagnosisController = require('../controllers/diagnosisController');
+const staffArchiveController = require('../controllers/staffArchiveController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -44,6 +47,52 @@ router.post(
   protect,
   authorizeRoles('owner_staff'),
   repairJobController.createRepairJob
+);
+
+// SCRUM-10: Owner/Staff-only shop-wide repair-job search and selected detail.
+router.get(
+  '/jobs',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.searchStaffJobs
+);
+
+// SCRUM-29 / SCRUM-129: Staff Closed/Archived Job Records & Dossier Audit View
+router.get(
+  '/jobs/archived',
+  protect,
+  authorizeRoles('owner_staff'),
+  staffArchiveController.searchArchivedJobs
+);
+router.get(
+  ['/jobs/archived/:jobIdentifier', '/jobs/archived/:id'],
+  protect,
+  authorizeRoles('owner_staff'),
+  staffArchiveController.getArchivedJobDetail
+);
+
+router.get(
+  '/jobs/:jobIdentifier',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.getStaffJob
+);
+
+// SCRUM-11: staff-route alias used by the admin frontend.
+router.patch(
+  '/jobs/:jobIdentifier/assign',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairJobController.assignTechnician
+);
+
+// SCRUM-13: Owner/Staff can read the recorded technical diagnosis, including
+// internal notes. Customer APIs use a separate allow-listed public DTO.
+router.get(
+  '/jobs/:jobIdentifier/diagnosis',
+  protect,
+  authorizeRoles('owner_staff'),
+  diagnosisController.getStaffDiagnosis
 );
 
 // SCRUM-14: Owner/Staff can inspect estimate prerequisites and issue the
@@ -108,6 +157,36 @@ router.patch(
   protect,
   authorizeRoles('owner_staff'),
   repairProgressController.updateProgress
+);
+// Parts arrived: resolve the active parts hold so the technician can resume.
+router.patch(
+  '/jobs/:jobIdentifier/parts-hold/resolve',
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.resolvePartsHold
+);
+
+// SCRUM-26 / SCRUM-116: Owner/Staff marks device ready for return unrepaired
+router.post(
+  ['/jobs/:jobIdentifier/ready-for-return', '/jobs/:id/ready-for-return'],
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.markReadyForReturn
+);
+
+// SCRUM-120: Owner/Staff records customer handover setting status to Collected
+router.post(
+  ['/jobs/:jobIdentifier/handover', '/jobs/:id/handover'],
+  protect,
+  authorizeRoles('owner_staff'),
+  repairProgressController.recordHandover
+);
+// Read-only view of technician progress updates (internal + public rows).
+router.get(
+  ['/jobs/:jobIdentifier/progress-updates', '/jobs/:jobIdentifier/work-notes'],
+  protect,
+  authorizeRoles('owner_staff'),
+  jobProgressLogController.listProgressUpdates
 );
 
 // SCRUM-44 / SCRUM-45: technician management is Owner/Staff only.

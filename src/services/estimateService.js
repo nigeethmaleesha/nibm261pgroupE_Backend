@@ -493,10 +493,10 @@ const recordEstimateDecision = async ({ jobIdentifier, payload = {}, actor }) =>
     }
   }
 
-  const previouslyApproved = await estimateRepository.findLatestApprovedByJob(job._id);
-  const targetJobStatus = normalizedAction === 'APPROVED'
-    ? 'Approved'
-    : (previouslyApproved ? 'Approved' : 'Estimate Rejected');
+  // Start/resume repair story: repair is only authorised by an approved LATEST
+  // version. Rejecting a revision therefore never falls back to an earlier
+  // approval; staff issue a new revision or return the device instead.
+  const targetJobStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Estimate Rejected';
   const targetEstimateStatus = normalizedAction === 'APPROVED' ? 'Approved' : 'Rejected';
   const decidedAt = new Date();
 

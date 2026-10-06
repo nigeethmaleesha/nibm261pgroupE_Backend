@@ -3923,6 +3923,955 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Customer - Public Repair Tracking (SCRUM-109)",
+      "item": [
+        {
+          "name": "Customer Track Repair Job - Current Status & Chronological Public Timeline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('Job details are present', () => {",
+                  "  pm.expect(data.job).to.be.an('object');",
+                  "  pm.expect(data.job.reference).to.be.a('string');",
+                  "  pm.expect(data.job.makeModel).to.be.a('string');",
+                  "  pm.expect(data.currentStatus).to.be.a('string');",
+                  "});",
+                  "pm.test('Public timeline events are dated and chronological', () => {",
+                  "  pm.expect(data.publicEvents).to.be.an('array');",
+                  "  for (let i = 0; i < data.publicEvents.length - 1; i++) {",
+                  "    const t1 = new Date(data.publicEvents[i].timestamp).getTime();",
+                  "    const t2 = new Date(data.publicEvents[i + 1].timestamp).getTime();",
+                  "    pm.expect(t1).to.be.at.most(t2);",
+                  "  }",
+                  "});",
+                  "pm.test('Sanitized of internal notes and technician IDs', () => {",
+                  "  const body = pm.response.text();",
+                  "  pm.expect(body).to.not.include('internalNotes');",
+                  "  pm.expect(body).to.not.include('internalNote');",
+                  "  pm.expect(body).to.not.include('assignedTechnician');",
+                  "  pm.expect(body).to.not.include('recordedBy');",
+                  "  pm.expect(body).to.not.include('startedBy');",
+                  "  pm.expect(body).to.not.include('updatedBy');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{activeJobId}}/track",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{activeJobId}}",
+                "track"
+              ]
+            },
+            "description": "SCRUM-109: Customer tracks the latest saved status and chronological dated public events for their repair job. Response is completely sanitized of internal notes and technician IDs."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Track Repair Job - Alias Route (/api/customer/jobs/:id/tracking)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('Returns tracking DTO with status and events', () => {",
+                  "  pm.expect(data.currentStatus).to.be.a('string');",
+                  "  pm.expect(data.publicEvents).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{activeJobId}}/tracking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{activeJobId}}",
+                "tracking"
+              ]
+            },
+            "description": "Alias route for /api/customer/jobs/:id/track."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Track Repair Job - Jira Alias Route (/api/jobs/:id/track)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('Jira alias returns identical tracking DTO', () => {",
+                  "  pm.expect(data.job.reference).to.be.a('string');",
+                  "  pm.expect(data.publicEvents).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{activeJobId}}/track",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{activeJobId}}",
+                "track"
+              ]
+            },
+            "description": "Jira-compatible endpoint alias for public-safe tracking."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Track Repair Job - Awaiting Approval Links to Decision",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "if (data.currentStatus === 'Awaiting Approval') {",
+                  "  pm.test('Action is required from customer', () => {",
+                  "    pm.expect(data.actionRequired).to.eql(true);",
+                  "    pm.expect(data.actionType).to.eql('ESTIMATE_DECISION');",
+                  "  });",
+                  "  pm.test('Contains estimate decision link', () => {",
+                  "    pm.expect(data.estimateDecision).to.be.an('object');",
+                  "    pm.expect(data.estimateDecision.decisionUrl).to.include('/estimate-decision');",
+                  "    pm.expect(data.estimateDecision.viewEstimateUrl).to.include('/current-estimate');",
+                  "  });",
+                  "} else {",
+                  "  pm.test('Job not in Awaiting Approval; actionRequired is false', () => {",
+                  "    pm.expect(data.actionRequired).to.eql(false);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{activeJobId}}/track",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{activeJobId}}",
+                "track"
+              ]
+            },
+            "description": "Verifies that an Awaiting Approval job displays actionRequired: true and links directly to its current estimate decision URL and view estimate URL."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Track Repair Job - Waiting for Parts Public Delay Reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "if (data.currentStatus === 'Waiting for Parts' || (data.partsDelay && data.partsDelay.reason)) {",
+                  "  pm.test('Public delay reason is present', () => {",
+                  "    pm.expect(data.publicDelayReason).to.be.a('string');",
+                  "    pm.expect(data.partsDelay).to.be.an('object');",
+                  "  });",
+                  "}",
+                  "pm.test('No internal supplier note or technician ID leaked in delay info', () => {",
+                  "  const body = pm.response.text();",
+                  "  pm.expect(body).to.not.include('internalNote');",
+                  "  pm.expect(body).to.not.include('placedBy');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{activeJobId}}/track",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{activeJobId}}",
+                "track"
+              ]
+            },
+            "description": "Verifies that Waiting for Parts displays the customer-safe public delay reason without internal notes or actor IDs."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Track Repair Job - Handover Instruction for Collection or Return",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "if (data.currentStatus === 'Ready for Collection') {",
+                  "  pm.test('Displays collection handover instruction', () => {",
+                  "    pm.expect(data.handoverInstruction).to.be.a('string');",
+                  "    pm.expect(data.handoverInstruction.toLowerCase()).to.include('collection');",
+                  "  });",
+                  "} else if (data.currentStatus === 'Ready for Return') {",
+                  "  pm.test('Displays return unrepaired handover instruction', () => {",
+                  "    pm.expect(data.handoverInstruction).to.be.a('string');",
+                  "    pm.expect(data.handoverInstruction.toLowerCase()).to.include('return');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{activeJobId}}/track",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{activeJobId}}",
+                "track"
+              ]
+            },
+            "description": "Verifies appropriate handover instruction is rendered when the device is Ready for Collection or Ready for Return."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Track Repair Job - Collected State (Outcome & Collection Time)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "if (data.currentStatus === 'Collected') {",
+                  "  pm.test('Collected details are present', () => {",
+                  "    pm.expect(data.collection).to.be.an('object');",
+                  "    pm.expect(data.collection.collectedAt).to.be.a('string');",
+                  "    pm.expect(['repaired', 'unrepaired']).to.include(data.collection.outcome);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{activeJobId}}/track",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{activeJobId}}",
+                "track"
+              ]
+            },
+            "description": "Verifies that Collected state displays the recorded collection time and repaired/unrepaired outcome."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Track Repair Job - 404 for Other Customer Job (IDOR Protection)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404 Not Found', () => pm.response.to.have.status(404));",
+                  "const data = pm.response.json();",
+                  "pm.test('Message is Repair job not found', () => {",
+                  "  pm.expect(data.message).to.eql('Repair job not found');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/670000000000000000000000/track",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "670000000000000000000000",
+                "track"
+              ]
+            },
+            "description": "Verifies that requesting a job ID belonging to another customer returns 404 NOT_FOUND, preventing IDOR data disclosure."
+          },
+          "response": []
+        }
+      ],
+      "description": "SCRUM-109: Customer public tracking view sanitized of internal notes and technician IDs. Features latest status, chronological dated public events, estimate decision links, delay reasons, handover instructions, and collection outcomes."
+    },
+    {
+      "name": "Staff - Customer Device Handover (SCRUM-120)",
+      "item": [
+        {
+          "name": "Staff Record Device Handover - Repaired (Ready for Collection -> Collected)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('Success is true', () => pm.expect(data.success).to.be.true);",
+                  "pm.test('Job status is Collected', () => pm.expect(data.job.status).to.eql('Collected'));",
+                  "pm.test('Outcome is repaired', () => pm.expect(data.job.collectionDetails.outcome).to.eql('repaired'));",
+                  "pm.test('Collected timestamp is recorded', () => pm.expect(data.job.collectionDetails.collectedAt).to.be.a('string'));",
+                  "pm.test('Staff member ID is stored', () => pm.expect(data.job.collectionDetails.collectedBy).to.not.be.null);",
+                  "pm.test('Audit update event created with toStatus Collected', () => {",
+                  "  pm.expect(data.update).to.be.an('object');",
+                  "  pm.expect(data.update.toStatus).to.eql('Collected');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": true,\n  \"deviceHandedOver\": true,\n  \"notes\": \"Customer presented photo ID and collected repaired device.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "SCRUM-120: Owner/Staff records handing a repaired device back to the customer. Status moves to Collected with collection timestamp, staff member ID, customer verification flags, and outcome: repaired."
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Record Device Handover - Unrepaired (Ready for Return -> Collected)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('Success is true', () => pm.expect(data.success).to.be.true);",
+                  "pm.test('Job status is Collected', () => pm.expect(data.job.status).to.eql('Collected'));",
+                  "pm.test('Outcome is unrepaired', () => pm.expect(data.job.collectionDetails.outcome).to.eql('unrepaired'));",
+                  "pm.test('Collected timestamp is recorded', () => pm.expect(data.job.collectionDetails.collectedAt).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": true,\n  \"deviceHandedOver\": true,\n  \"notes\": \"Device returned unrepaired following customer request.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "SCRUM-120: Owner/Staff records customer handover for a job that was Ready for Return. Sets outcome to unrepaired and status to Collected."
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Record Device Handover - Idempotent Replay (Already Collected)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('Already collected flag is true', () => pm.expect(data.alreadyCollected).to.be.true);",
+                  "pm.test('Returns existing Collected job without duplicate event', () => {",
+                  "  pm.expect(data.job.status).to.eql('Collected');",
+                  "  pm.expect(data.update).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": true,\n  \"deviceHandedOver\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "SCRUM-120: Repeating the same successful handover request on an already Collected job safely returns the existing state without creating another collection event."
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Record Device Handover - Jira Alias Route (/api/jobs/:id/handover)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json();",
+                  "pm.test('Jira alias successfully records or replays handover', () => {",
+                  "  pm.expect(data.job.status).to.eql('Collected');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": true,\n  \"deviceHandedOver\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "Jira-compatible route alias for customer device handover."
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Record Device Handover - Refuse Missing Identity Confirmation (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "const data = pm.response.json();",
+                  "pm.test('Validation error returned for unconfirmed identity', () => {",
+                  "  pm.expect(data.error.message).to.include('identity');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": false,\n  \"deviceHandedOver\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "Verifies that handover cannot proceed without explicit confirmation of the customer identity."
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Record Device Handover - Refuse Missing Device Handover Confirmation (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "const data = pm.response.json();",
+                  "pm.test('Validation error returned for unconfirmed device handover', () => {",
+                  "  pm.expect(data.error.message).to.include('handed over');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": true,\n  \"deviceHandedOver\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "Verifies that handover cannot proceed without explicit confirmation that device was handed over."
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Record Device Handover - Refuse Non-Ready Job Status (409 Conflict)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const data = pm.response.json();",
+                  "pm.test('State conflict returned for non-ready job', () => {",
+                  "  pm.expect(data.error.codeName).to.eql('INVALID_STATUS');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": true,\n  \"deviceHandedOver\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "Verifies that handover is refused when the job is not in Ready for Collection or Ready for Return."
+          },
+          "response": []
+        },
+        {
+          "name": "Staff Record Device Handover - Forbidden for Unauthorized Role (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerIdentityConfirmed\": true,\n  \"deviceHandedOver\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/jobs/{{activeJobId}}/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "jobs",
+                "{{activeJobId}}",
+                "handover"
+              ]
+            },
+            "description": "Verifies that customers and technicians cannot perform staff handover."
+          },
+          "response": []
+        }
+      ],
+      "description": "SCRUM-120: Owner/Staff records handing a ready device back to its customer. Status becomes Collected with staff member and collection time, outcome (Repaired or Unrepaired), and immutable read-only lock."
+    },
+    {
+      "name": "Customer - Completed Repair Records & History (SCRUM-125)",
+      "description": "SCRUM-125: Authenticated customers view completed (Collected) repair records, outcomes (Repaired/Unrepaired), collection time, public repair summary or return reason, and issued estimate versions with recorded decisions. Enforces multi-tenant IDOR protection, immutability, and zero data leakage of internal notes.",
+      "item": [
+        {
+          "name": "Get Completed Repair Records (History List)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response is successful', () => pm.expect(body.status).to.eql('success'));",
+                  "pm.test('Jobs array returned', () => pm.expect(body.data.jobs).to.be.an('array'));",
+                  "if (body.data.jobs.length > 0) {",
+                  "  const job = body.data.jobs[0];",
+                  "  pm.test('Contains reference and device', () => {",
+                  "    pm.expect(job).to.have.property('reference');",
+                  "    pm.expect(job).to.have.property('device');",
+                  "  });",
+                  "  pm.test('Contains outcome and collection time', () => {",
+                  "    pm.expect(job).to.have.property('outcome');",
+                  "    pm.expect(job).to.have.property('outcomeDisplay');",
+                  "    pm.expect(job).to.have.property('collectionTime');",
+                  "  });",
+                  "  pm.test('Contains publicRepairSummary or returnReason', () => {",
+                  "    pm.expect(job.publicRepairSummary !== undefined || job.returnReason !== undefined).to.be.true;",
+                  "  });",
+                  "  pm.test('Contains estimate history and customer decisions', () => {",
+                  "    pm.expect(job).to.have.property('estimateHistory');",
+                  "  });",
+                  "  pm.test('Zero Data Leakage: Internal notes and tech IDs excluded', () => {",
+                  "    const str = JSON.stringify(job);",
+                  "    pm.expect(str).to.not.include('internalNotes');",
+                  "    pm.expect(str).to.not.include('assignedTechnician');",
+                  "    pm.expect(str).to.not.include('collectedBy');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "history"
+              ]
+            },
+            "description": "Returns completed repair records for authenticated customer with outcome, collection details, estimates, and customer decisions."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Completed Job Record Detail by Reference",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Status is Collected', () => pm.expect(body.data.status).to.eql('Collected'));",
+                  "pm.test('Includes public timeline events', () => pm.expect(body.data.publicEvents).to.be.an('array'));",
+                  "pm.test('Includes estimate versions and decisions', () => pm.expect(body.data.estimateHistory).to.be.an('array'));",
+                  "pm.test('Zero Data Leakage: No internal findings or technician IDs', () => {",
+                  "  const str = JSON.stringify(body.data);",
+                  "  pm.expect(str).to.not.include('internalNotes');",
+                  "  pm.expect(str).to.not.include('recommendedWork');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{repairJobReference}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{repairJobReference}}",
+                "history"
+              ]
+            },
+            "description": "Fetches detailed record of a single selected completed repair job for the customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Completed Job Record Detail (Jira Alias Route)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Job reference matches', () => pm.expect(body.data.reference).to.eql(pm.collectionVariables.get('repairJobReference')));",
+                  "pm.test('Status is Collected', () => pm.expect(body.data.status).to.eql('Collected'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{repairJobReference}}/completed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{repairJobReference}}",
+                "completed"
+              ]
+            },
+            "description": "Jira-compatible route alias for retrieving completed job record."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Unauthorized Read of Other Customer's Closed Record (IDOR 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error code is NOT_FOUND', () => {",
+                  "  pm.expect(body.error.codeName).to.eql('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/JOB-OTHER-CUSTOMER-9999/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "JOB-OTHER-CUSTOMER-9999",
+                "history"
+              ]
+            },
+            "description": "Verifies IDOR protection: requesting another customer's closed job returns 404 Not Found."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Request for In-Progress (Non-Collected) Job in History (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 or 404', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 400) {",
+                  "  pm.test('Code is JOB_NOT_COLLECTED', () => pm.expect(body.error.codeName).to.eql('JOB_NOT_COLLECTED'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/jobs/{{repairJobReference}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customer",
+                "jobs",
+                "{{repairJobReference}}",
+                "history"
+              ]
+            },
+            "description": "Verifies that requesting completed history for an uncollected job is rejected."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [

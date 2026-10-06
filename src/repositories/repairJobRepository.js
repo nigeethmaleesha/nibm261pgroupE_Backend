@@ -20,6 +20,14 @@ const findByIdOrReference = (identifier, { session = null } = {}) => {
   return query;
 };
 
+
+const identifierFilter = (identifier) => {
+  const value = String(identifier || '').trim();
+  return mongoose.isValidObjectId(value)
+    ? { _id: value }
+    : { reference: value.toUpperCase() };
+};
+
 const findByIdForEstimate = (jobId, { session = null } = {}) => {
   let query = RepairJob.findById(jobId);
   if (session) query = query.session(session);
@@ -50,29 +58,97 @@ const attachInitialEstimate = (
   { new: true, session }
 );
 
+
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// SCRUM-10: Owner/Staff shop-wide repair-job search. The requested query is
+// safely escaped before being used in MongoDB regex conditions.
+const searchForStaff = (queryValue = '', limit = 50) => {
+  const query = String(queryValue || '').trim();
+  const filter = {};
+
+  if (query) {
+    const safeQuery = escapeRegExp(query);
+    const matcher = { $regex: safeQuery, $options: 'i' };
+    filter.$or = [
+      { reference: matcher },
+      { 'customerSnapshot.fullName': matcher },
+      { 'customerSnapshot.contactNumber': matcher }
+    ];
+  }
+
+  return RepairJob.find(filter)
+    .select(
+      'reference customer customerSnapshot deviceType makeModel serialNumber reportedFault receivedAt status assignedTechnician assignedBy assignedAt currentEstimate revision createdAt updatedAt'
+    )
+    .populate(
+      'assignedTechnician',
+      'fullName email contactNumber role isActive isEmailVerified'
+    )
+    .sort({ receivedAt: -1, _id: -1 })
+    .limit(limit);
+};
+
+// SCRUM-10: detailed Owner/Staff view for a selected result.
+const findForStaffDetail = (identifier, { session = null } = {}) => {
+  let query = RepairJob.findOne(identifierFilter(identifier))
+    .populate(
+      'assignedTechnician',
+      'fullName email contactNumber role isActive isEmailVerified'
+    )
+    .populate('assignedBy', 'fullName email role')
+    .populate(
+      'currentEstimate',
+      'versionNumber currency totalMinor status issuedAt decision'
+    );
+
+  if (session) query = query.session(session);
+  return query;
+};
+
+// SCRUM-11: assignment update is guarded by both workflow state and optimistic
+// revision so a Collected/concurrently changed job is never silently overwritten.
+const assignTechnician = (
+  jobId,
+  technicianId,
+  assignedBy,
+  assignedAt,
+  expectedRevision,
+  session
+) => {
+  const revisionFilter = expectedRevision === 0
+    ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+    : { revision: expectedRevision };
+
+  return RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: { $ne: 'Collected' },
+      ...revisionFilter
+    },
+    {
+      $set: {
+        assignedTechnician: technicianId,
+        assignedBy,
+        assignedAt
+      },
+      $inc: { revision: 1 }
+    },
+    { new: true, session }
+  );
+};
+
 // Estimate revision: move currentEstimate to the new version and send the job
 // back to Awaiting Approval. The filter pins the job to the state the service
 // validated (status, previous estimate and revision) so a concurrent decision or
-// revision makes this update miss instead of overwriting it. An existing parts
-// hold is never cleared here; `partsHold` is only passed to place a new one.
+// revision makes this update miss instead of overwriting it. `partsHold` is not
+// touched here: an active hold stays active and a resolved hold stays resolved.
 const attachRevisedEstimate = (
   jobId,
-  {
-    previousEstimateId,
-    estimateId,
-    expectedStatus,
-    expectedRevision,
-    partsHold = null
-  },
+  { previousEstimateId, estimateId, expectedStatus, expectedRevision },
   session
-) => {
-  const $set = {
-    currentEstimate: estimateId,
-    status: 'Awaiting Approval'
-  };
-  if (partsHold) $set.partsHold = partsHold;
-
-  return RepairJob.findOneAndUpdate(
+) =>
+  RepairJob.findOneAndUpdate(
     {
       _id: jobId,
       status: expectedStatus,
@@ -82,22 +158,27 @@ const attachRevisedEstimate = (
         : { revision: expectedRevision })
     },
     {
-      $set,
+      $set: {
+        currentEstimate: estimateId,
+        status: 'Awaiting Approval'
+      },
       $inc: { revision: 1 }
     },
     { returnDocument: 'after', session }
   );
-};
 
 // Repair progress lock: the update only applies when the job is still in the
 // status, revision and current estimate the service validated. Issuing a
 // revised estimate changes all three (status -> Awaiting Approval), so a
 // progress update that races a revision misses instead of slipping through.
+// `extraFilter` adds save-time rechecks, e.g. start/resume repair requires no
+// active parts hold and that the job is still assigned to the technician.
 const applyProgressUpdate = (
   jobId,
-  { expectedStatus, expectedRevision, expectedEstimateId, set }
+  { expectedStatus, expectedRevision, expectedEstimateId, set, extraFilter = {} }
 ) => RepairJob.findOneAndUpdate(
   {
+    ...extraFilter,
     _id: jobId,
     status: { $eq: expectedStatus, $ne: 'Awaiting Approval' },
     currentEstimate: expectedEstimateId,
@@ -110,6 +191,171 @@ const applyProgressUpdate = (
     $inc: { revision: 1 }
   },
   { returnDocument: 'after' }
+);
+
+
+// Place a parts hold atomically. The job must still be In Repair, still be
+// assigned to the same technician, still point at the estimate the service
+// validated, and have no active hold. This prevents a concurrent estimate
+// revision/reassignment from being overwritten by a stale technician screen.
+const placePartsHold = (
+  jobId,
+  { technicianId, expectedRevision, expectedEstimateId, partsHold }
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    assignedTechnician: technicianId,
+    currentEstimate: expectedEstimateId,
+    'partsHold.active': { $ne: true },
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Waiting for Parts',
+      partsHold
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
+// Resolve an active parts hold (parts arrived). Status is intentionally left
+// unchanged: Waiting for Parts must be explicitly resumed, and Awaiting
+// Approval must remain Awaiting Approval until the customer's decision.
+const releasePartsHold = (
+  jobId,
+  { expectedRevision, releasedAt, releasedBy, resolutionNote = null, technicianId = null }
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    'partsHold.active': true,
+    status: { $nin: ['Ready for Collection', 'Ready for Return', 'Collected'] },
+    ...(technicianId ? { assignedTechnician: technicianId } : {}),
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      'partsHold.active': false,
+      'partsHold.releasedAt': releasedAt,
+      'partsHold.releasedBy': releasedBy,
+      'partsHold.resolutionNote': resolutionNote
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after' }
+);
+
+// Save-time recheck for a technician progress update: the job must still be
+// In Repair under the same approved estimate, with no active parts hold, and
+// still assigned to this technician. Does not bump the job revision because a
+// progress update is not a workflow state change.
+const touchProgressLog = (
+  jobId,
+  { technicianId, expectedEstimateId, recordedAt },
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    currentEstimate: expectedEstimateId,
+    assignedTechnician: technicianId,
+    'partsHold.active': { $ne: true }
+  },
+  { $set: { 'repairWork.lastProgressUpdateAt': recordedAt } },
+  { returnDocument: 'after', session }
+);
+
+// SCRUM-13: atomically begin diagnosis only for the currently assigned
+// technician and only while the repair job is still Received.
+const startDiagnosis = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Received',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Diagnosing',
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId,
+      diagnosisRecordedAt: null,
+      diagnosisRecordedBy: null
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Compatibility path for a job already in Diagnosing (for example an older
+// branch/test record) that has no SCRUM-13 metadata yet.
+const syncDiagnosisStartedMetadata = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  startedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosing',
+      diagnosisStartedAt: startedAt,
+      diagnosisStartedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
+);
+
+// Completing the diagnosis records the second diagnosis-state transition but
+// intentionally leaves RepairJob.status as Diagnosing so the already-complete
+// SCRUM-14 estimate flow remains unchanged.
+const markDiagnosisRecorded = (
+  jobId,
+  technicianId,
+  expectedRevision,
+  recordedAt,
+  session
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    assignedTechnician: technicianId,
+    status: 'Diagnosing',
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      diagnosisState: 'Diagnosis Recorded',
+      diagnosisRecordedAt: recordedAt,
+      diagnosisRecordedBy: technicianId
+    },
+    $inc: { revision: 1 }
+  },
+  { new: true, session }
 );
 
 // SCRUM-41: return all jobs assigned to a specific technician, newest first.
@@ -152,15 +398,313 @@ const findByCustomer = (customerId) =>
     .select('reference deviceType makeModel serialNumber status receivedAt currentEstimate')
     .sort({ receivedAt: -1 });
 
+// SCRUM-125: return all completed (Collected) repair jobs belonging to the authenticated customer
+const findCompletedByCustomer = (customerId) =>
+  RepairJob.find({ customer: customerId, status: 'Collected' })
+    .sort({ 'collectionDetails.collectedAt': -1, updatedAt: -1 });
+
+// SCRUM-25 / SCRUM-113: Complete repair and move status to Ready for Collection.
+// Rechecks atomically that the job is In Repair, assigned to this technician,
+// matches the approved estimate and revision, and has no active parts hold.
+const completeRepairJob = (
+  jobId,
+  {
+    technicianId,
+    expectedRevision,
+    expectedEstimateId,
+    completionDetails,
+    completedAt
+  },
+  session = null
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: 'In Repair',
+    assignedTechnician: technicianId,
+    currentEstimate: expectedEstimateId,
+    'partsHold.active': { $ne: true },
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Ready for Collection',
+      completionDetails: {
+        ...completionDetails,
+        completedAt,
+        completedBy: technicianId
+      }
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after', session }
+);
+
+// SCRUM-26 / SCRUM-116: Owner/Staff marks a declined or unrepairable device Ready for Return.
+// Releases any active parts hold, records return reason, and updates status.
+const markJobReadyForReturn = (
+  jobId,
+  {
+    staffId,
+    expectedRevision,
+    returnDetails,
+    returnedAt
+  },
+  session = null
+) => RepairJob.findOneAndUpdate(
+  {
+    _id: jobId,
+    status: { $nin: ['Ready for Return', 'Ready for Collection', 'Collected'] },
+    ...(expectedRevision === 0
+      ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+      : { revision: expectedRevision })
+  },
+  {
+    $set: {
+      status: 'Ready for Return',
+      'partsHold.active': false,
+      'partsHold.releasedAt': returnedAt,
+      'partsHold.releasedBy': staffId,
+      'partsHold.resolutionNote': 'Parts hold ended due to unrepaired return',
+      returnDetails: {
+        ...returnDetails,
+        returnedAt,
+        returnedBy: staffId
+      }
+    },
+    $inc: { revision: 1 }
+  },
+  { returnDocument: 'after', session }
+);
+
+// SCRUM-120: Owner/Staff records customer handover. Sets status to Collected,
+// stores the staff member and collection time, confirmation flags, outcome,
+// and optional notes. Atomic update guarded by Ready for Collection or Ready for Return.
+const recordHandover = (
+  jobId,
+  {
+    staffId,
+    outcome,
+    notes = null,
+    collectedAt,
+    customerIdentityConfirmed = true,
+    deviceHandedOver = true,
+    expectedRevision = null
+  },
+  session = null
+) => {
+  const revisionFilter = expectedRevision !== null && expectedRevision !== undefined
+    ? (expectedRevision === 0
+        ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+        : { revision: expectedRevision })
+    : {};
+
+  return RepairJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: { $in: ['Ready for Collection', 'Ready for Return'] },
+      ...revisionFilter
+    },
+    {
+      $set: {
+        status: 'Collected',
+        'collectionDetails.collectedAt': collectedAt,
+        'collectionDetails.collectedBy': staffId,
+        'collectionDetails.customerIdentityConfirmed': customerIdentityConfirmed,
+        'collectionDetails.deviceHandedOver': deviceHandedOver,
+        'collectionDetails.outcome': outcome,
+        'collectionDetails.notes': notes || null
+      },
+      $inc: { revision: 1 }
+    },
+    { returnDocument: 'after', session }
+  );
+};
+
+// SCRUM-29 / SCRUM-129: Staff Closed/Archived Jobs Search with filters for outcome and date range.
+const searchArchivedForStaff = ({
+  queryValue = '',
+  startDate = null,
+  endDate = null,
+  outcome = null,
+  limit = 50,
+  skip = 0
+} = {}) => {
+  const filter = { status: 'Collected' };
+
+  // Text search across reference, customer name, phone, email, make/model
+  const query = String(queryValue || '').trim();
+  if (query) {
+    const safeQuery = escapeRegExp(query);
+    const matcher = { $regex: safeQuery, $options: 'i' };
+    filter.$or = [
+      { reference: matcher },
+      { 'customerSnapshot.fullName': matcher },
+      { 'customerSnapshot.contactNumber': matcher },
+      { 'customerSnapshot.email': matcher },
+      { makeModel: matcher }
+    ];
+  }
+
+  // Outcome filter ('repaired' vs 'unrepaired')
+  if (outcome) {
+    const safeOutcome = String(outcome).trim().toLowerCase();
+    if (safeOutcome === 'repaired') {
+      filter['collectionDetails.outcome'] = { $in: ['repaired', 'Repaired'] };
+    } else if (safeOutcome === 'unrepaired') {
+      filter['collectionDetails.outcome'] = { $in: ['unrepaired', 'Unrepaired'] };
+    }
+  }
+
+  // Date range filter on collectionDetails.collectedAt
+  if (startDate || endDate) {
+    const dateFilter = {};
+    if (startDate) {
+      const parsedStart = new Date(startDate);
+      if (!Number.isNaN(parsedStart.getTime())) {
+        dateFilter.$gte = parsedStart;
+      }
+    }
+    if (endDate) {
+      const parsedEnd = new Date(endDate);
+      if (!Number.isNaN(parsedEnd.getTime())) {
+        if (typeof endDate === 'string' && endDate.length <= 10) {
+          parsedEnd.setUTCHours(23, 59, 59, 999);
+        }
+        dateFilter.$lte = parsedEnd;
+      }
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { 'collectionDetails.collectedAt': dateFilter },
+          {
+            'collectionDetails.collectedAt': null,
+            updatedAt: dateFilter
+          }
+        ]
+      });
+    }
+  }
+
+  return RepairJob.find(filter)
+    .populate('assignedTechnician', 'fullName email contactNumber role isActive isEmailVerified')
+    .populate('assignedBy', 'fullName email role')
+    .populate('collectionDetails.collectedBy', 'fullName email role')
+    .populate('completionDetails.completedBy', 'fullName email role')
+    .populate('returnDetails.returnedBy', 'fullName email role')
+    .sort({ 'collectionDetails.collectedAt': -1, updatedAt: -1, _id: -1 })
+    .skip(skip)
+    .limit(limit);
+};
+
+// SCRUM-29 / SCRUM-129: Count archived jobs matching filters for pagination
+const countArchivedForStaff = ({
+  queryValue = '',
+  startDate = null,
+  endDate = null,
+  outcome = null
+} = {}) => {
+  const filter = { status: 'Collected' };
+
+  const query = String(queryValue || '').trim();
+  if (query) {
+    const safeQuery = escapeRegExp(query);
+    const matcher = { $regex: safeQuery, $options: 'i' };
+    filter.$or = [
+      { reference: matcher },
+      { 'customerSnapshot.fullName': matcher },
+      { 'customerSnapshot.contactNumber': matcher },
+      { 'customerSnapshot.email': matcher },
+      { makeModel: matcher }
+    ];
+  }
+
+  if (outcome) {
+    const safeOutcome = String(outcome).trim().toLowerCase();
+    if (safeOutcome === 'repaired') {
+      filter['collectionDetails.outcome'] = { $in: ['repaired', 'Repaired'] };
+    } else if (safeOutcome === 'unrepaired') {
+      filter['collectionDetails.outcome'] = { $in: ['unrepaired', 'Unrepaired'] };
+    }
+  }
+
+  if (startDate || endDate) {
+    const dateFilter = {};
+    if (startDate) {
+      const parsedStart = new Date(startDate);
+      if (!Number.isNaN(parsedStart.getTime())) {
+        dateFilter.$gte = parsedStart;
+      }
+    }
+    if (endDate) {
+      const parsedEnd = new Date(endDate);
+      if (!Number.isNaN(parsedEnd.getTime())) {
+        if (typeof endDate === 'string' && endDate.length <= 10) {
+          parsedEnd.setUTCHours(23, 59, 59, 999);
+        }
+        dateFilter.$lte = parsedEnd;
+      }
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { 'collectionDetails.collectedAt': dateFilter },
+          {
+            'collectionDetails.collectedAt': null,
+            updatedAt: dateFilter
+          }
+        ]
+      });
+    }
+  }
+
+  return RepairJob.countDocuments(filter);
+};
+
+// SCRUM-29 / SCRUM-129: Full archived job detail for Staff Dossier
+const findArchivedDetailForStaff = (identifier, { session = null } = {}) => {
+  let query = RepairJob.findOne(identifierFilter(identifier))
+    .populate('assignedTechnician', 'fullName email contactNumber role isActive isEmailVerified')
+    .populate('assignedBy', 'fullName email role')
+    .populate('collectionDetails.collectedBy', 'fullName email role')
+    .populate('completionDetails.completedBy', 'fullName email role')
+    .populate('returnDetails.returnedBy', 'fullName email role')
+    .populate('createdBy', 'fullName email role')
+    .populate('currentEstimate');
+
+  if (session) query = query.session(session);
+  return query;
+};
+
 module.exports = {
   create,
   findByIdempotency,
   findByIdOrReference,
   findByIdForEstimate,
   attachInitialEstimate,
+  searchForStaff,
+  findForStaffDetail,
+  assignTechnician,
   attachRevisedEstimate,
   applyProgressUpdate,
+  placePartsHold,
+  releasePartsHold,
+  touchProgressLog,
+  startDiagnosis,
+  syncDiagnosisStartedMetadata,
+  markDiagnosisRecorded,
   findAssignedToTechnician,
   updateStatusForDecision,
-  findByCustomer
+  findByCustomer,
+  findCompletedByCustomer,
+  completeRepairJob,
+  markJobReadyForReturn,
+  recordHandover,
+  searchArchivedForStaff,
+  countArchivedForStaff,
+  findArchivedDetailForStaff
 };

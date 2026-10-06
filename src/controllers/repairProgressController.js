@@ -25,7 +25,91 @@ const getProgressHistory = async (req, res, next) => {
   }
 };
 
+const startRepair = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.startRepair({
+      jobIdentifier: req.params.jobIdentifier,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const placePartsHold = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.placePartsHold({
+      jobIdentifier: req.params.jobIdentifier,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const resolvePartsHold = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.resolvePartsHold({
+      jobIdentifier: req.params.jobIdentifier,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const completeRepair = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.completeRepair({
+      jobIdentifier: req.params.jobIdentifier || req.params.id,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const markReadyForReturn = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.markReadyForReturn({
+      jobIdentifier: req.params.jobIdentifier || req.params.id,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const recordHandover = async (req, res, next) => {
+  try {
+    const result = await repairProgressService.recordHandover({
+      jobIdentifier: req.params.jobIdentifier || req.params.id,
+      payload: req.body,
+      actor: req.user
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   updateProgress,
-  getProgressHistory
+  getProgressHistory,
+  startRepair,
+  placePartsHold,
+  resolvePartsHold,
+  completeRepair,
+  markReadyForReturn,
+  recordHandover
 };

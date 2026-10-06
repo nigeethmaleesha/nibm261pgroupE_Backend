@@ -118,6 +118,153 @@ const sendOtpEmail = async ({ email, otp, purpose, expiresInMinutes }) => {
   });
 };
 
+const sendRepairCompletedEmail = async ({ email, customerName, reference, deviceModel, summary }) => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log(`[Notification Trigger] Device ready for collection email simulated for ${email} (Job: ${reference})`);
+    return false;
+  }
+  const fromName = process.env.EMAIL_FROM_NAME || 'RepairFlow';
+  const subject = `RepairFlow - Your Device is Ready for Collection! (Ref: ${reference})`;
+  const text = [
+    `Dear ${customerName || 'Customer'},`,
+    `Great news! The repair work on your ${deviceModel} (Reference: ${reference}) has been successfully completed and passed quality control checks.`,
+    `Technician Update: ${summary}`,
+    'Your device is now Ready for Collection at our service centre. Please bring your reference code and a valid photo ID.',
+    'Thank you for choosing RepairFlow!'
+  ].join('\n\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;max-width:560px;margin:auto">
+      <h2 style="color:#059669;margin-bottom:8px">Your Device is Ready for Collection!</h2>
+      <p>Dear <strong>${customerName || 'Customer'}</strong>,</p>
+      <p>The repair work on your <strong>${deviceModel}</strong> (Reference: <code>${reference}</code>) has been successfully completed and passed all quality control checks.</p>
+      <div style="background-color:#f0fdf4;border-left:4px solid #10b981;padding:12px 16px;margin:16px 0;border-radius:4px">
+        <p style="margin:0;font-weight:600;color:#065f46">Technician Update:</p>
+        <p style="margin:4px 0 0;color:#047857">${summary}</p>
+      </div>
+      <p>Your device is now <strong>Ready for Collection</strong> at our service centre. Please bring your reference code (<strong>${reference}</strong>) and a valid photo ID upon pickup.</p>
+      <p style="color:#6b7280;font-size:12px;margin-top:24px">RepairFlow Electronic Device Repair Shop</p>
+    </div>
+  `;
+
+  try {
+    await getTransporter().sendMail({
+      from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject,
+      text,
+      html
+    });
+    return true;
+  } catch (err) {
+    console.error(`[Notification Trigger] Failed to send email to ${email}:`, err.message);
+    return false;
+  }
+};
+
+const sendRepairReadyForReturnEmail = async ({ email, customerName, reference, deviceModel, reason, notes }) => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log(`[Notification Trigger] Device ready for return (unrepaired) email simulated for ${email} (Job: ${reference})`);
+    return false;
+  }
+  const fromName = process.env.EMAIL_FROM_NAME || 'RepairFlow';
+  const subject = `RepairFlow - Your Device is Ready for Return (Ref: ${reference})`;
+  const text = [
+    `Dear ${customerName || 'Customer'},`,
+    `Your ${deviceModel} (Reference: ${reference}) has been prepared and is ready for pickup unrepaired.`,
+    `Reason: ${reason}`,
+    notes ? `Details: ${notes}` : '',
+    'Please visit our service centre with your reference code and a valid photo ID to collect your device.',
+    'Thank you for contacting RepairFlow!'
+  ].filter(Boolean).join('\n\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;max-width:560px;margin:auto">
+      <h2 style="color:#d97706;margin-bottom:8px">Device Ready for Pickup (Unrepaired)</h2>
+      <p>Dear <strong>${customerName || 'Customer'}</strong>,</p>
+      <p>Your <strong>${deviceModel}</strong> (Reference: <code>${reference}</code>) has been prepared and is ready for pickup unrepaired.</p>
+      <div style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:12px 16px;margin:16px 0;border-radius:4px">
+        <p style="margin:0;font-weight:600;color:#92400e">Return Reason:</p>
+        <p style="margin:4px 0 0;color:#78350f">${reason}</p>
+        ${notes ? `<p style="margin:6px 0 0;font-size:13px;color:#78350f"><strong>Notes:</strong> ${notes}</p>` : ''}
+      </div>
+      <p>Please visit our service centre with your reference code (<strong>${reference}</strong>) and a valid photo ID to collect your device.</p>
+      <p style="color:#6b7280;font-size:12px;margin-top:24px">RepairFlow Electronic Device Repair Shop</p>
+    </div>
+  `;
+
+  try {
+    await getTransporter().sendMail({
+      from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject,
+      text,
+      html
+    });
+    return true;
+  } catch (err) {
+    console.error(`[Notification Trigger] Failed to send return email to ${email}:`, err.message);
+    return false;
+  }
+};
+
+const sendRepairCollectedEmail = async ({
+  email,
+  customerName,
+  reference,
+  deviceModel,
+  outcome,
+  collectedAt,
+  notes
+}) => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.log(`[Notification Trigger] Device handover (Collected) email simulated for ${email} (Job: ${reference})`);
+    return false;
+  }
+  const fromName = process.env.EMAIL_FROM_NAME || 'RepairFlow';
+  const displayOutcome = String(outcome || '').toLowerCase() === 'repaired' ? 'Repaired' : 'Unrepaired';
+  const subject = `RepairFlow - Device Handover Confirmation (Ref: ${reference})`;
+  const formattedDate = collectedAt ? new Date(collectedAt).toUTCString() : new Date().toUTCString();
+
+  const text = [
+    `Dear ${customerName || 'Customer'},`,
+    `Your ${deviceModel} (Reference: ${reference}) has been handed over to you on ${formattedDate}.`,
+    `Handover Outcome: ${displayOutcome}`,
+    notes ? `Staff Notes: ${notes}` : '',
+    'Thank you for trusting RepairFlow with your device!',
+    'If you have any questions or feedback, please feel free to reach out to our service centre.'
+  ].filter(Boolean).join('\n\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;max-width:560px;margin:auto">
+      <h2 style="color:#059669;margin-bottom:8px">Device Handover Complete</h2>
+      <p>Dear <strong>${customerName || 'Customer'}</strong>,</p>
+      <p>This email confirms that your <strong>${deviceModel}</strong> (Reference: <code>${reference}</code>) was successfully handed over to you on <strong>${formattedDate}</strong>.</p>
+      <div style="background-color:#ecfdf5;border-left:4px solid #10b981;padding:12px 16px;margin:16px 0;border-radius:4px">
+        <p style="margin:0;font-weight:600;color:#065f46">Handover Outcome:</p>
+        <p style="margin:4px 0 0;color:#047857"><strong>${displayOutcome}</strong></p>
+        ${notes ? `<p style="margin:6px 0 0;font-size:13px;color:#047857"><strong>Staff Notes:</strong> ${notes}</p>` : ''}
+      </div>
+      <p>Thank you for choosing RepairFlow!</p>
+      <p style="color:#6b7280;font-size:12px;margin-top:24px">RepairFlow Electronic Device Repair Shop</p>
+    </div>
+  `;
+
+  try {
+    await getTransporter().sendMail({
+      from: `"${fromName}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject,
+      text,
+      html
+    });
+    return true;
+  } catch (err) {
+    console.error(`[Notification Trigger] Failed to send handover email to ${email}:`, err.message);
+    return false;
+  }
+};
+
 const verifyEmailTransport = async () => {
   await getTransporter().verify();
   return true;
@@ -125,6 +272,9 @@ const verifyEmailTransport = async () => {
 
 module.exports = {
   sendOtpEmail,
+  sendRepairCompletedEmail,
+  sendRepairReadyForReturnEmail,
+  sendRepairCollectedEmail,
   assertEmailConfig,
   verifyEmailTransport
 };

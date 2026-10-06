@@ -29,18 +29,197 @@ const partsHoldSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    // Required part/component recorded by the technician when the hold starts.
+    requiredPart: {
+      type: String,
+      trim: true,
+      maxlength: 160,
+      default: null
+    },
+    // Customer-safe delay reason. Customer APIs may expose this field, while
+    // internalNote and actor ids remain internal-only.
     reason: {
       type: String,
       trim: true,
       maxlength: 500,
       default: null
     },
+    internalNote: {
+      type: String,
+      trim: true,
+      maxlength: 250,
+      default: null
+    },
     placedAt: {
       type: Date,
       default: null
     },
+    placedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     releasedAt: {
       type: Date,
+      default: null
+    },
+    releasedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    resolutionNote: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+const repairWorkSchema = new mongoose.Schema(
+  {
+    firstStartedAt: {
+      type: Date,
+      default: null
+    },
+    firstStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    lastAction: {
+      type: String,
+      enum: ['START', 'RESUME', null],
+      default: null
+    },
+    lastStartedAt: {
+      type: Date,
+      default: null
+    },
+    lastStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    approvedEstimate: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Estimate',
+      default: null
+    },
+    approvedEstimateVersion: {
+      type: Number,
+      default: null
+    },
+    // Last technician progress update (job_progress_logs). Written in the
+    // same transaction as the log rows so the job state is rechecked at save.
+    lastProgressUpdateAt: {
+      type: Date,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+const collectionDetailsSchema = new mongoose.Schema(
+  {
+    collectedAt: {
+      type: Date,
+      default: null
+    },
+    collectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    customerIdentityConfirmed: {
+      type: Boolean,
+      default: false
+    },
+    deviceHandedOver: {
+      type: Boolean,
+      default: false
+    },
+    outcome: {
+      type: String,
+      enum: ['repaired', 'unrepaired', 'Repaired', 'Unrepaired', null],
+      default: null
+    },
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+// SCRUM-25 / SCRUM-113: QC completion checks & handover metadata.
+const completionDetailsSchema = new mongoose.Schema(
+  {
+    completedAt: {
+      type: Date,
+      default: null
+    },
+    completedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    faultResolved: {
+      type: Boolean,
+      default: false
+    },
+    functionalTestPassed: {
+      type: Boolean,
+      default: false
+    },
+    functionalTestNotes: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null
+    },
+    customerSummary: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null
+    },
+    internalNotes: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+// SCRUM-26 / SCRUM-116: Unrepaired return readiness details.
+const returnDetailsSchema = new mongoose.Schema(
+  {
+    returnedAt: {
+      type: Date,
+      default: null
+    },
+    returnedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    reason: {
+      type: String,
+      trim: true,
+      maxlength: 200,
+      default: null
+    },
+    notes: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
       default: null
     }
   },
@@ -135,6 +314,42 @@ const repairJobSchema = new mongoose.Schema(
       ref: 'User',
       default: null
     },
+    // SCRUM-11: records which Owner/Staff member made the latest assignment.
+    assignedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    assignedAt: {
+      type: Date,
+      default: null
+    },
+    // SCRUM-13: diagnosis lifecycle metadata is additive to the existing
+    // repair workflow status. The global status remains `Diagnosing` after
+    // completion so SCRUM-14 estimate issuance keeps its existing contract.
+    diagnosisState: {
+      type: String,
+      enum: ['Not Started', 'Diagnosing', 'Diagnosis Recorded'],
+      default: 'Not Started'
+    },
+    diagnosisStartedAt: {
+      type: Date,
+      default: null
+    },
+    diagnosisStartedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    diagnosisRecordedAt: {
+      type: Date,
+      default: null
+    },
+    diagnosisRecordedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -150,6 +365,28 @@ const repairJobSchema = new mongoose.Schema(
     },
     partsHold: {
       type: partsHoldSchema,
+      default: () => ({})
+    },
+    // Start/resume repair: who moved the job into In Repair, when, and under
+    // which approved estimate version. First start is kept; the last* fields
+    // are overwritten on every start or resume.
+    repairWork: {
+      type: repairWorkSchema,
+      default: () => ({})
+    },
+    // SCRUM-109: recorded collection time and repaired/unrepaired outcome
+    collectionDetails: {
+      type: collectionDetailsSchema,
+      default: () => ({})
+    },
+    // SCRUM-25 / SCRUM-113: QC completion checks & handover metadata
+    completionDetails: {
+      type: completionDetailsSchema,
+      default: () => ({})
+    },
+    // SCRUM-26 / SCRUM-116: Unrepaired return details
+    returnDetails: {
+      type: returnDetailsSchema,
       default: () => ({})
     },
     // Optimistic revision used when workflow commands change the job state.
@@ -202,12 +439,82 @@ repairJobSchema.index(
   { name: 'repair_job_status_received_idx' }
 );
 
+// SCRUM-10: searchable staff job list. Reference already has a unique index;
+// these two indexes support the customer-name / contact-number search fields.
+repairJobSchema.index(
+  { 'customerSnapshot.fullName': 1 },
+  { name: 'repair_job_customer_name_search_idx' }
+);
+repairJobSchema.index(
+  { 'customerSnapshot.contactNumber': 1 },
+  { name: 'repair_job_customer_phone_search_idx' }
+);
+
 // SCRUM-41: fast lookup of all jobs assigned to a specific technician.
 repairJobSchema.index(
   { assignedTechnician: 1, receivedAt: -1 },
   { name: 'repair_job_assigned_technician_idx' }
 );
 
+// SCRUM-120: Database trigger making Collected repair jobs strictly immutable.
+// Prevents any updates or deletions once a job reaches the final Collected state.
+repairJobSchema.pre('save', async function () {
+  if (!this.isNew) {
+    try {
+      const existing = await this.constructor.findById(this._id).select('status').lean();
+      if (existing && existing.status === 'Collected') {
+        const err = new Error('Collected repair jobs are immutable and cannot be modified.');
+        err.codeName = 'REPAIR_CLOSED';
+        err.statusCode = 409;
+        throw err;
+      }
+    } catch (err) {
+      if (err.message && err.message.includes('Collected repair jobs are immutable')) {
+        throw err;
+      }
+    }
+  }
+});
+
+repairJobSchema.pre(['updateOne', 'updateMany', 'findOneAndUpdate'], async function () {
+  try {
+    if (!this.model) return;
+    const filter = this.getFilter();
+    if (!filter) return;
+    const existing = await this.model.findOne(filter).select('status').lean();
+    if (existing && existing.status === 'Collected') {
+      const err = new Error('Collected repair jobs are immutable and cannot be modified.');
+      err.codeName = 'REPAIR_CLOSED';
+      err.statusCode = 409;
+      throw err;
+    }
+  } catch (err) {
+    if (err.message && err.message.includes('Collected repair jobs are immutable')) {
+      throw err;
+    }
+  }
+});
+
+repairJobSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove'], async function () {
+  try {
+    if (!this.model) return;
+    const filter = this.getFilter();
+    if (!filter) return;
+    const existing = await this.model.findOne(filter).select('status').lean();
+    if (existing && existing.status === 'Collected') {
+      const err = new Error('Collected repair jobs are immutable and cannot be deleted.');
+      err.codeName = 'REPAIR_CLOSED';
+      err.statusCode = 409;
+      throw err;
+    }
+  } catch (err) {
+    if (err.message && err.message.includes('Collected repair jobs are immutable')) {
+      throw err;
+    }
+  }
+});
+
 module.exports = mongoose.model('RepairJob', repairJobSchema);
 module.exports.JOB_STATUSES = JOB_STATUSES;
 module.exports.REVISION_BLOCKED_STATUSES = REVISION_BLOCKED_STATUSES;
+
