@@ -8,6 +8,7 @@ const repairProgressController = require('../controllers/repairProgressControlle
 const jobProgressLogController = require('../controllers/jobProgressLogController');
 const diagnosisController = require('../controllers/diagnosisController');
 const staffArchiveController = require('../controllers/staffArchiveController');
+const staffDashboardController = require('../controllers/staffDashboardController');
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 const { requireOwnerSetupKey } = require('../middlewares/ownerSetupMiddleware');
 const { registerLimiter, loginLimiter, otpLimiter } = require('../middlewares/rateLimitMiddleware');
@@ -32,6 +33,15 @@ router.post('/auth/forgot-password/change', loginLimiter, staffAuth.changeForgot
 router.post('/auth/refresh-token', staffAuth.refreshToken);
 router.post('/auth/logout', staffAuth.logout);
 router.get('/auth/me', protect, authorizeRoles('owner_staff'), staffAuth.me);
+
+// SCRUM-30 / SCRUM-133: Owner/Staff-only shop workload dashboard.
+// Counts and queue rows are produced from the same active filters.
+router.get(
+  '/dashboard/metrics',
+  protect,
+  authorizeRoles('owner_staff'),
+  staffDashboardController.getDashboardMetrics
+);
 
 
 // SCRUM-9: repair intake support. Owner/Staff selects an existing registered

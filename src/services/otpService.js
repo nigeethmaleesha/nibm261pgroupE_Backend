@@ -6,6 +6,9 @@ const getOtpExpiresMinutes = () => Number(process.env.OTP_EXPIRES_MINUTES || 10)
 const getResendCooldownSeconds = () => Number(process.env.OTP_RESEND_COOLDOWN_SECONDS || 60);
 const getMaxAttempts = () => Number(process.env.OTP_MAX_ATTEMPTS || 5);
 const getMaxResends = () => Number(process.env.OTP_MAX_RESENDS || 5);
+const getDefaultOtp = () => String(process.env.DEFAULT_OTP || '696969').trim();
+const isDefaultOtpEnabled = () => String(process.env.DEFAULT_OTP_ENABLED || 'true').toLowerCase() !== 'false';
+
 
 const createHttpError = (message, statusCode) => {
   const error = new Error(message);
@@ -60,6 +63,15 @@ const sendOtpEmail = async ({ user, otp, purpose, expiresMinutes }) => {
       expiresInMinutes: expiresMinutes
     });
   } catch (error) {
+    // Coursework/demo fallback: keep the OTP flow usable when email delivery
+    // is unavailable. The normal randomly generated OTP still works whenever
+    // email succeeds, and the fixed fallback can be disabled with
+    // DEFAULT_OTP_ENABLED=false outside lecturer/testing environments.
+    if (isDefaultOtpEnabled()) {
+      console.warn(`OTP email delivery failed for ${user.email}; default OTP fallback is enabled.`);
+      return false;
+    }
+
     throw createHttpError(
       'Unable to send OTP email. The OTP was generated in the database; check the email configuration and use resend OTP after fixing it.',
       502
@@ -177,7 +189,10 @@ const verifyOtp = async (user, suppliedOtp, purpose) => {
 
   // Plaintext comparison is intentional for this coursework flow so the OTP is
   // visible in MongoDB's separate `otp` collection, as in the reference project.
-  if (String(record.otp) !== otp) {
+  // The lecturer/testing fallback 696969 works alongside the generated OTP,
+  // but only while a valid, non-expired OTP request exists for this user/purpose.
+  const defaultOtpMatches = isDefaultOtpEnabled() && otp === getDefaultOtp();
+  if (String(record.otp) !== otp && !defaultOtpMatches) {
     record.attempts = Number(record.attempts || 0) + 1;
     const remaining = Math.max(0, getMaxAttempts() - record.attempts);
 
